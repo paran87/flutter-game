@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../controllers/game_controller.dart';
 import '../controllers/player_agent.dart';
+import '../models/game_state.dart';
 import '../models/obstacle_dot.dart';
 import '../models/player.dart';
 import '../rendering/board_decor_painter.dart';
@@ -12,6 +13,7 @@ import '../rendering/effects_painter.dart';
 import '../rendering/trace_painter.dart';
 import 'balloon_widget.dart';
 import 'board_overlays.dart';
+import 'targeting_overlay.dart';
 
 /// The playing surface: decor, dots, traces, markers and balloons.
 ///
@@ -96,11 +98,24 @@ class _GameBoardState extends State<GameBoard> {
                 ),
               ),
             ),
+            // Dims the field (between the two goal lines) during attacks.
+            Positioned(
+              left: transform.boardRect.left,
+              width: transform.boardRect.width,
+              top: transform
+                  .toScreen(Offset(0, controller.config.bottomGoalY))
+                  .dy,
+              bottom:
+                  constraints.maxHeight -
+                  transform.toScreen(Offset(0, controller.config.topGoalY)).dy,
+              child: TargetingScrim(controller: controller),
+            ),
             for (final player in controller.players)
               _BalloonRow(
                 controller: controller,
                 player: player,
                 transform: transform,
+                touchAgent: touchAgent,
               ),
             Positioned.fill(
               child: BoardOverlays(
@@ -116,16 +131,21 @@ class _GameBoardState extends State<GameBoard> {
 }
 
 /// One player's balloons, positioned in world space at their end of the board.
+///
+/// During targeting the defender's row grows (bigger tap targets) and, when
+/// the local human is attacking, each living balloon becomes tappable.
 class _BalloonRow extends StatelessWidget {
   const _BalloonRow({
     required this.controller,
     required this.player,
     required this.transform,
+    this.touchAgent,
   });
 
   final GameController controller;
   final Player player;
   final BoardTransform transform;
+  final TouchPlayerAgent? touchAgent;
 
   @override
   Widget build(BuildContext context) {
@@ -143,28 +163,58 @@ class _BalloonRow extends StatelessWidget {
       top: top,
       width: right - left,
       height: height,
-      child: ValueListenableBuilder<PlayerHudSnapshot>(
-        valueListenable: player.hud,
-        builder: (context, _, _) => Stack(
-          clipBehavior: Clip.none,
-          children: [
-            for (final balloon in player.balloons)
-              Positioned(
-                left:
-                    transform.toScreen(Offset(xs[balloon.index], y)).dx -
-                    width / 2 -
-                    left,
-                top: 0,
-                child: BalloonWidget(
-                  color: player.identity.color,
-                  status: balloon.status,
-                  width: width,
-                  index: balloon.index,
-                  popDuration: config.balloonAnimationDuration,
-                ),
-              ),
-          ],
-        ),
+      child: ListenableBuilder(
+        listenable: Listenable.merge([
+          controller.balloonVersion,
+          controller.phase,
+        ]),
+        builder: (context, _) {
+          final phase = controller.phase.value;
+          final attacker = controller.roundWinner;
+          final underAttack =
+              attacker != null &&
+              !identical(attacker, player) &&
+              (phase == GamePhase.targeting ||
+                  phase == GamePhase.balloonDestroyed);
+          final canTap =
+              underAttack &&
+              phase == GamePhase.targeting &&
+              controller.targetIndex == null &&
+              !attacker.identity.isBot &&
+              touchAgent != null;
+
+          return AnimatedScale(
+            scale: underAttack ? 1.3 : 1,
+            duration: const Duration(milliseconds: 380),
+            curve: Curves.easeOutBack,
+            alignment: player.isTop
+                ? Alignment.topCenter
+                : Alignment.bottomCenter,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                for (final balloon in player.balloons)
+                  Positioned(
+                    left:
+                        transform.toScreen(Offset(xs[balloon.index], y)).dx -
+                        width / 2 -
+                        left,
+                    top: 0,
+                    child: BalloonWidget(
+                      color: player.identity.color,
+                      status: balloon.status,
+                      width: width,
+                      index: balloon.index,
+                      popDuration: config.balloonAnimationDuration,
+                      targetable: canTap && balloon.isAlive,
+                      attackerColor: attacker?.identity.color,
+                      onTap: () => touchAgent?.selectBalloon(balloon.index),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

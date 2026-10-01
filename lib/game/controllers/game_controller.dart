@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 
 import '../../app/theme.dart';
+import '../models/balloon.dart';
 import '../models/game_config.dart';
 import '../models/game_state.dart';
 import '../models/game_stats.dart';
@@ -133,6 +134,17 @@ class GameController {
   Player? _roundWinner;
   Player? get roundWinner => _roundWinner;
 
+  /// Balloon chosen during targeting (index into the defender's balloons).
+  int? _targetIndex;
+  int? get targetIndex => _targetIndex;
+
+  /// Bumped whenever any balloon changes status, so balloon widgets rebuild
+  /// only then.
+  final ValueNotifier<int> balloonVersion = ValueNotifier(0);
+
+  /// Brief lock-on before the pop, so the choice reads as intentional.
+  static const _lockOnSeconds = 0.35;
+
   PlayerAgent agentFor(Player p) =>
       identical(p, bottom) ? bottomAgent : topAgent;
   Player opponentOf(Player p) => identical(p, bottom) ? top : bottom;
@@ -182,12 +194,14 @@ class GameController {
         _tickPlaying(dt);
       case GamePhase.playerSuccess:
         if (_phaseTime >= _seconds(config.successSummaryDuration)) {
-          _beginNextRound();
+          _beginTargeting();
         }
+      case GamePhase.targeting:
+        _tickTargeting();
+      case GamePhase.balloonDestroyed:
+        _tickBalloonDestroyed();
       case GamePhase.intro:
       case GamePhase.countdown:
-      case GamePhase.targeting:
-      case GamePhase.balloonDestroyed:
       case GamePhase.nextRound:
       case GamePhase.gameOver:
         break;
@@ -222,7 +236,7 @@ class GameController {
     }
     if (bottom.runStatus == RunStatus.eliminated &&
         top.runStatus == RunStatus.eliminated) {
-      _setPhase(GamePhase.gameOver);
+      _endGame(GameEndTrigger.noAttempts);
     }
   }
 
@@ -341,11 +355,90 @@ class GameController {
     feedback.runFailed(local: !p.identity.isBot);
   }
 
+  // ------------------------------------------------------------ Targeting
+
+  /// The player whose balloons are under attack.
+  Player? get defender {
+    final attacker = _roundWinner;
+    return attacker == null ? null : opponentOf(attacker);
+  }
+
+  void _beginTargeting() {
+    final attacker = _roundWinner!;
+    agentFor(attacker).reset();
+    _targetIndex = null;
+    _setPhase(GamePhase.targeting);
+  }
+
+  void _tickTargeting() {
+    final attacker = _roundWinner!;
+    final target = defender!;
+    final available = target.aliveBalloonIndexes;
+
+    if (_targetIndex == null) {
+      var choice = agentFor(attacker).chooseBalloon(available, _phaseTime);
+      // Nobody waits forever: pick for an idle attacker when time runs out.
+      if (choice == null &&
+          _phaseTime >= _seconds(config.targetingDuration) &&
+          available.isNotEmpty) {
+        choice = available[math.Random().nextInt(available.length)];
+      }
+      if (choice != null && available.contains(choice)) {
+        _targetIndex = choice;
+        target.balloons[choice].status = BalloonStatus.targeted;
+        _lockOnAt = _phaseTime;
+        balloonVersion.value++;
+        feedback.haptics.selection();
+      }
+      return;
+    }
+
+    if (_phaseTime - _lockOnAt >= _lockOnSeconds) {
+      target.balloons[_targetIndex!].status = BalloonStatus.popping;
+      balloonVersion.value++;
+      _popFeedbackDone = false;
+      _setPhase(GamePhase.balloonDestroyed);
+    }
+  }
+
+  double _lockOnAt = 0;
+  bool _popFeedbackDone = false;
+
+  /// Fraction of the pop animation at which the balloon visibly bursts
+  /// (matches BalloonPainter's anticipation timing).
+  static const _burstFraction = 0.52;
+
+  void _tickBalloonDestroyed() {
+    final attacker = _roundWinner!;
+    final target = defender!;
+    final balloon = target.balloons[_targetIndex!];
+    final popTime = _seconds(config.balloonAnimationDuration);
+
+    if (!_popFeedbackDone && _phaseTime >= popTime * _burstFraction) {
+      _popFeedbackDone = true;
+      feedback.balloonDestroyed(localOwner: !target.identity.isBot);
+    }
+
+    if (balloon.status == BalloonStatus.popping && _phaseTime >= popTime) {
+      balloon.status = BalloonStatus.destroyed;
+      attacker.stats.balloonsDestroyed++;
+      balloonVersion.value++;
+    }
+    if (_phaseTime >= popTime + _seconds(config.postPopPause)) {
+      if (target.balloonsStanding == 0) {
+        _endGame(GameEndTrigger.balloons);
+      } else {
+        _beginNextRound();
+      }
+    }
+  }
+
   // --------------------------------------------------------------- Rounds
 
   void _beginNextRound() {
     round.value++;
     _roundWinner = null;
+    _targetIndex = null;
     _generateField();
     effects.clear();
     fadingTraces.clear();
@@ -354,6 +447,19 @@ class GameController {
       _startRun(p);
     }
     _setPhase(GamePhase.playing);
+  }
+
+  // ------------------------------------------------------------- Game end
+
+  GameEndTrigger? _endTrigger;
+  GameEndTrigger? get endTrigger => _endTrigger;
+
+  void _endGame(GameEndTrigger trigger) {
+    _endTrigger = trigger;
+    for (final p in players) {
+      agentFor(p).reset();
+    }
+    _setPhase(GamePhase.gameOver);
   }
 
   // ------------------------------------------------------------------ HUD
@@ -375,6 +481,7 @@ class GameController {
     round.dispose();
     lastSuccess.dispose();
     lastFailure.dispose();
+    balloonVersion.dispose();
     bottomAgent.dispose();
     topAgent.dispose();
     for (final p in players) {

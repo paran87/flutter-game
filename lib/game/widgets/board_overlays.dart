@@ -5,6 +5,7 @@ import '../models/game_state.dart';
 import '../rendering/board_transform.dart';
 import 'failure_toast.dart';
 import 'run_summary_card.dart';
+import 'targeting_overlay.dart';
 
 /// Phase-driven overlays drawn on top of the board.
 class BoardOverlays extends StatelessWidget {
@@ -42,6 +43,10 @@ class BoardOverlays extends StatelessWidget {
           child: Center(
             child: FailureToast(controller: controller, forTopPlayer: false),
           ),
+        ),
+        Positioned.fromRect(
+          rect: rect,
+          child: Center(child: TargetingBanner(controller: controller)),
         ),
         Positioned.fromRect(
           rect: rect,
