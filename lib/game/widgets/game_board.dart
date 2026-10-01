@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../controllers/game_controller.dart';
+import '../controllers/player_agent.dart';
 import '../models/obstacle_dot.dart';
 import '../models/player.dart';
 import '../rendering/board_decor_painter.dart';
@@ -20,9 +21,13 @@ class GameBoard extends StatelessWidget {
     super.key,
     required this.controller,
     required this.onTransform,
+    this.touchAgent,
   });
 
   final GameController controller;
+
+  /// The local human's input, used to draw the finger tether.
+  final TouchPlayerAgent? touchAgent;
 
   /// Reports the current world→screen mapping (needed for touch input).
   final ValueChanged<BoardTransform> onTransform;
@@ -70,6 +75,7 @@ class GameBoard extends StatelessWidget {
                   painter: GameBoardPainter(
                     controller: controller,
                     transform: transform,
+                    touchAgent: touchAgent,
                   ),
                 ),
               ),

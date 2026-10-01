@@ -1,6 +1,5 @@
-import 'dart:ui';
-
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 
@@ -10,12 +9,18 @@ import '../models/obstacle_dot.dart';
 import '../models/player.dart';
 import '../models/player_identities.dart';
 import '../utils/obstacle_generator.dart';
+import 'movement_controller.dart';
+import 'player_agent.dart';
 
 /// Central game state machine. Owns players, the obstacle field, the clock
 /// and round progression. Widgets only read from it and forward input.
 class GameController {
-  GameController({this.config = const GameConfig()})
-    : _baseSeed = config.obstacleSeed ?? math.Random().nextInt(1 << 30) {
+  GameController({
+    this.config = const GameConfig(),
+    required this.bottomAgent,
+    required this.topAgent,
+  }) : _baseSeed = config.obstacleSeed ?? math.Random().nextInt(1 << 30),
+       _movement = MovementController(config) {
     bottom = Player(
       side: PlayerSide.bottom,
       identity: humanIdentity,
@@ -31,10 +36,17 @@ class GameController {
       maxAttempts: config.attemptsPerPlayer,
     );
     _generateField();
+    phase.value = GamePhase.playing;
+    for (final p in players) {
+      _startRun(p);
+    }
   }
 
   final GameConfig config;
+  final PlayerAgent bottomAgent;
+  final PlayerAgent topAgent;
   final int _baseSeed;
+  final MovementController _movement;
 
   late final Player bottom;
   late final Player top;
@@ -51,15 +63,57 @@ class GameController {
   final ValueNotifier<GamePhase> phase = ValueNotifier(GamePhase.intro);
   final ValueNotifier<int> round = ValueNotifier(1);
 
+  PlayerAgent agentFor(Player p) =>
+      identical(p, bottom) ? bottomAgent : topAgent;
+  Player opponentOf(Player p) => identical(p, bottom) ? top : bottom;
+
+  AgentContext _contextFor(Player p) => AgentContext(
+    config: config,
+    field: field.value,
+    self: p,
+    opponent: opponentOf(p),
+  );
+
   void _generateField() {
     // Each round gets its own layout, reproducible from the base seed.
     final seed = _baseSeed + (round.value - 1) * 7919;
     field.value = ObstacleGenerator(config).generate(seed);
   }
 
+  void _startRun(Player p) {
+    p.resetToStart();
+    agentFor(p).onRunStart(_contextFor(p));
+  }
+
   /// Advances the simulation by [dt] seconds.
   void tick(double dt) {
+    if (phase.value == GamePhase.playing) {
+      for (final p in players) {
+        _updatePlayer(p, dt);
+      }
+    }
     frame.ping();
+  }
+
+  void _updatePlayer(Player p, double dt) {
+    if (!p.canMove) return;
+    final agent = agentFor(p);
+    final intent = agent.update(dt, _contextFor(p));
+    final target = intent.target;
+    if (target == null) return;
+
+    p.position = _movement.step(
+      position: p.position,
+      target: target,
+      dt: dt,
+      maxSpeed: agent.maxSpeed,
+    );
+
+    // The run officially starts once the pen leaves the start pad.
+    if (p.runStatus == RunStatus.ready &&
+        (p.position - p.startPosition).distance > config.runStartThreshold) {
+      p.runStatus = RunStatus.running;
+    }
   }
 
   void dispose() {
@@ -67,6 +121,8 @@ class GameController {
     field.dispose();
     phase.dispose();
     round.dispose();
+    bottomAgent.dispose();
+    topAgent.dispose();
     for (final p in players) {
       p.dispose();
     }
