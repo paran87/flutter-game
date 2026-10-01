@@ -49,19 +49,17 @@ void _paintDots(
   int count = 40,
   Rect? avoid,
 }) {
+  // Same look as the real field: dark ink, three clear sizes.
   final rng = math.Random(seed);
-  final paint = Paint();
+  final paint = Paint()..color = AppColors.ink.withValues(alpha: 0.92);
+  const radii = [2.5, 3.8, 5.5];
   for (var i = 0; i < count; i++) {
     final p = Offset(
       rng.nextDouble() * size.width,
       size.height * (0.18 + rng.nextDouble() * 0.64),
     );
     if (avoid != null && avoid.contains(p)) continue;
-    final light = rng.nextDouble() < 0.25;
-    paint.color = (light ? AppColors.inkSoft : AppColors.ink).withValues(
-      alpha: light ? 0.3 : 0.85,
-    );
-    canvas.drawCircle(p, 1.5 + math.pow(rng.nextDouble(), 2) * 5, paint);
+    canvas.drawCircle(p, radii[rng.nextInt(radii.length)], paint);
   }
 }
 

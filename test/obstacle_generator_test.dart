@@ -81,4 +81,48 @@ void main() {
       }
     }
   });
+
+  test('the field is evenly filled: no empty stripes or patches', () {
+    for (var seed = 1; seed <= 12; seed++) {
+      final field = generator.generate(seed);
+      final rect = config.fieldRect;
+      // Every 40-unit vertical stripe across the field holds plenty of dots.
+      for (var x = rect.left; x < rect.right - 40; x += 40) {
+        final inStripe = field.dots
+            .where((d) => d.center.dx >= x && d.center.dx < x + 40)
+            .length;
+        expect(inStripe, greaterThan(20), reason: 'seed $seed stripe at x=$x');
+      }
+      // And no open hole inside the field wider than about a pen.
+      for (var x = rect.left + 30; x < rect.right - 30; x += 12) {
+        for (var y = rect.top + 40; y < rect.bottom - 40; y += 12) {
+          final probe = Offset(x, y);
+          final nearest = field.dots
+              .map((d) => (d.center - probe).distance - d.radius)
+              .reduce((a, b) => a < b ? a : b);
+          expect(nearest, lessThan(32), reason: 'seed $seed hole at $probe');
+        }
+      }
+    }
+  });
+
+  test('every dot is dark ink and one of three clear sizes', () {
+    final field = generator.generate(5);
+    for (final d in field.dots) {
+      expect(d.opacity, greaterThanOrEqualTo(config.minObstacleOpacity));
+      final tierRadius = switch (d.size) {
+        ObstacleSize.small => config.smallDotRadius,
+        ObstacleSize.medium => config.mediumDotRadius,
+        ObstacleSize.large => config.largeDotRadius,
+      };
+      expect(
+        (d.radius - tierRadius).abs(),
+        lessThanOrEqualTo(config.dotRadiusJitter + 1e-9),
+      );
+    }
+    final share =
+        field.dots.where((d) => d.size == ObstacleSize.large).length /
+        field.dots.length;
+    expect(share, inInclusiveRange(0.12, 0.3));
+  });
 }

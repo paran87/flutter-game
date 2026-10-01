@@ -75,7 +75,7 @@ class BotController extends PlayerAgent {
     // below its speed cap, but close enough to follow the route's curves.
     final lookahead = math.max(
       26.0,
-      profile.speed / context.config.movementSmoothing * 1.4,
+      profile.speed / context.config.movementSmoothing * 1.0,
     );
     while (_carrot < _path.length - 1 &&
         (_path[_carrot] - self).distance < lookahead) {

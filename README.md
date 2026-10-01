@@ -17,7 +17,7 @@ Built with Flutter 3.47 / Dart 3.13 and no third-party runtime packages:
 flutter pub get
 flutter run                      # Android / iOS device or emulator
 flutter run -d chrome            # quick look in a browser
-flutter test                     # 78 unit + widget tests
+flutter test                     # 80 unit + widget tests
 ```
 
 Dev flag for a quick end-of-game check:
@@ -33,6 +33,9 @@ A match is one continuous race on a single dot field. There are no rounds.
 2. **Dots cost points, never stop you.** Touching a dot costs 5/10/20 points
    by size, flashes it, shakes the pen and briefly slows it. A dot charges
    once per contact, and touching the same dot again within 300 ms is free.
+   The field is packed evenly with dark ink dots in three clear sizes
+   (small, medium, large), so there are no empty lanes to sneak through:
+   every route is a choice of which dots to risk.
 3. **Cross, then hunt.** Once your pen crosses the dashed line on the
    opponent's side, keep drawing and steer it *into* one of their
    balloons. Touching a balloon pops it. One balloon per run.

@@ -77,15 +77,16 @@ class GameConfig {
     // Obstacles
     this.obstacleSeed,
     this.obstacleDensity = 1.0,
-    this.baseObstacleCount = 680,
-    this.minObstacleRadius = 3.2,
-    this.maxObstacleRadius = 16,
-    this.minObstacleOpacity = 0.18,
+    this.baseObstacleCount = 900,
+    this.smallDotRadius = 6,
+    this.mediumDotRadius = 9,
+    this.largeDotRadius = 13,
+    this.dotRadiusJitter = 0.6,
+    this.smallDotShare = 0.45,
+    this.mediumDotShare = 0.35,
+    this.minObstacleOpacity = 0.88,
     this.maxObstacleOpacity = 1.0,
-    this.lightDotChance = 0.22,
     this.minObstacleSpacing = 2.5,
-    this.mediumObstacleRadius = 6.5,
-    this.largeObstacleRadius = 10.5,
     // Collision & penalties
     this.collisionTolerance = 2,
     this.smallObstaclePenalty = 5,
@@ -184,22 +185,34 @@ class GameConfig {
   /// Multiplier on [baseObstacleCount].
   final double obstacleDensity;
   final int baseObstacleCount;
-  final double minObstacleRadius;
-  final double maxObstacleRadius;
+
+  /// Every dot is one of three clearly different sizes (radius, world
+  /// units), each with a small random jitter so the field still looks
+  /// hand-inked rather than stamped.
+  final double smallDotRadius;
+  final double mediumDotRadius;
+  final double largeDotRadius;
+  final double dotRadiusJitter;
+
+  /// Share of small and medium dots; the rest are large.
+  final double smallDotShare;
+  final double mediumDotShare;
+
+  /// All dots are dark ink: no faint grey dots.
   final double minObstacleOpacity;
   final double maxObstacleOpacity;
-
-  /// Chance that a dot is a lighter gray dot.
-  final double lightDotChance;
 
   /// Minimum gap between two dot edges.
   final double minObstacleSpacing;
 
-  /// Dots with radius >= this are "medium".
-  final double mediumObstacleRadius;
+  double get minObstacleRadius => smallDotRadius - dotRadiusJitter;
+  double get maxObstacleRadius => largeDotRadius + dotRadiusJitter;
+
+  /// Dots with radius >= this are "medium" (halfway between tiers).
+  double get mediumObstacleRadius => (smallDotRadius + mediumDotRadius) / 2;
 
   /// Dots with radius >= this are "large".
-  final double largeObstacleRadius;
+  double get largeObstacleRadius => (mediumDotRadius + largeDotRadius) / 2;
 
   int get obstacleCount => (baseObstacleCount * obstacleDensity).round();
   double get fieldWidth => fieldRect.width;
@@ -343,14 +356,15 @@ class GameConfig {
       obstacleSeed: obstacleSeed ?? this.obstacleSeed,
       obstacleDensity: obstacleDensity ?? this.obstacleDensity,
       baseObstacleCount: baseObstacleCount,
-      minObstacleRadius: minObstacleRadius,
-      maxObstacleRadius: maxObstacleRadius,
+      smallDotRadius: smallDotRadius,
+      mediumDotRadius: mediumDotRadius,
+      largeDotRadius: largeDotRadius,
+      dotRadiusJitter: dotRadiusJitter,
+      smallDotShare: smallDotShare,
+      mediumDotShare: mediumDotShare,
       minObstacleOpacity: minObstacleOpacity,
       maxObstacleOpacity: maxObstacleOpacity,
-      lightDotChance: lightDotChance,
       minObstacleSpacing: minObstacleSpacing,
-      mediumObstacleRadius: mediumObstacleRadius,
-      largeObstacleRadius: largeObstacleRadius,
       collisionTolerance: collisionTolerance,
       smallObstaclePenalty: smallObstaclePenalty,
       mediumObstaclePenalty: mediumObstaclePenalty,
