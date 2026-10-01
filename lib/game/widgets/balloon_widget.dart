@@ -14,6 +14,7 @@ class BalloonWidget extends StatefulWidget {
     required this.width,
     this.index = 0,
     this.targetable = false,
+    this.aimed = false,
     this.attackerColor,
     this.onTap,
     this.popDuration = const Duration(milliseconds: 800),
@@ -26,6 +27,9 @@ class BalloonWidget extends StatefulWidget {
 
   /// Shows a pulsing crosshair and accepts taps.
   final bool targetable;
+
+  /// Shows the reticle without accepting taps (opponent is aiming here).
+  final bool aimed;
   final Color? attackerColor;
   final VoidCallback? onTap;
   final Duration popDuration;
@@ -57,15 +61,16 @@ class _BalloonWidgetState extends State<BalloonWidget>
   void initState() {
     super.initState();
     _syncStatus(null);
-    if (widget.targetable) _target.repeat();
+    if (widget.targetable || widget.aimed) _target.repeat();
   }
 
   @override
   void didUpdateWidget(BalloonWidget old) {
     super.didUpdateWidget(old);
     if (old.status != widget.status) _syncStatus(old.status);
-    if (old.targetable != widget.targetable) {
-      widget.targetable ? _target.repeat() : _target.stop();
+    final reticle = widget.targetable || widget.aimed;
+    if ((old.targetable || old.aimed) != reticle) {
+      reticle ? _target.repeat() : _target.stop();
     }
   }
 
@@ -123,7 +128,7 @@ class _BalloonWidgetState extends State<BalloonWidget>
       },
     );
 
-    if (widget.targetable || isTargeted) {
+    if (widget.targetable || widget.aimed || isTargeted) {
       balloon = Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.center,

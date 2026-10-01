@@ -3,6 +3,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../../app/app.dart';
 import '../../app/theme.dart';
+import '../controllers/bot_controller.dart';
 import '../controllers/game_controller.dart';
 import '../controllers/player_agent.dart';
 import '../models/game_config.dart';
@@ -35,7 +36,7 @@ class _GameScreenState extends State<GameScreen>
   late final GameController _controller = GameController(
     config: widget.config,
     bottomAgent: _human,
-    topAgent: IdleAgent(),
+    topAgent: BotController(difficulty: widget.config.botDifficulty),
     feedback: GameFeedback(),
   );
   late final Ticker _ticker = createTicker(_onTick);

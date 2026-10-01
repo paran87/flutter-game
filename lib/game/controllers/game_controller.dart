@@ -164,6 +164,9 @@ class GameController {
   /// only then.
   final ValueNotifier<int> balloonVersion = ValueNotifier(0);
 
+  /// The defender balloon the attacker is currently eyeing (aim sweep).
+  final ValueNotifier<int?> aimingAt = ValueNotifier(null);
+
   /// Brief lock-on before the pop, so the choice reads as intentional.
   static const _lockOnSeconds = 0.35;
 
@@ -454,7 +457,9 @@ class GameController {
     final available = target.aliveBalloonIndexes;
 
     if (_targetIndex == null) {
-      var choice = agentFor(attacker).chooseBalloon(available, _phaseTime);
+      final agent = agentFor(attacker);
+      var choice = agent.chooseBalloon(available, _phaseTime);
+      aimingAt.value = choice ?? agent.aimHint;
       // Nobody waits forever: pick for an idle attacker when time runs out.
       if (choice == null &&
           _phaseTime >= _seconds(config.targetingDuration) &&
@@ -514,6 +519,7 @@ class GameController {
   // --------------------------------------------------------------- Rounds
 
   void _beginNextRound() {
+    aimingAt.value = null;
     round.value++;
     _roundWinner = null;
     _targetIndex = null;
@@ -603,6 +609,7 @@ class GameController {
     lastSuccess.dispose();
     lastFailure.dispose();
     balloonVersion.dispose();
+    aimingAt.dispose();
     timerSeconds.dispose();
     result.dispose();
     bottomAgent.dispose();

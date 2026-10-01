@@ -55,6 +55,10 @@ abstract class PlayerAgent {
   /// chosen balloon index once decided, or null to keep thinking.
   int? chooseBalloon(List<int> available, double elapsed);
 
+  /// Which balloon the agent is currently eyeing while choosing, if any
+  /// (purely presentational; lets the opponent see the aim sweep).
+  int? get aimHint => null;
+
   /// Clears transient input (e.g. a held finger) between phases.
   void reset() {}
 

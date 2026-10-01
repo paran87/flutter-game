@@ -61,7 +61,7 @@ class GameConfig {
     // World layout
     this.worldWidth = 1000,
     this.worldHeight = 1600,
-    this.fieldRect = const Rect.fromLTRB(40, 270, 960, 1330),
+    this.fieldRect = const Rect.fromLTRB(22, 270, 978, 1330),
     this.topStart = const Offset(500, 205),
     this.bottomStart = const Offset(500, 1395),
     this.topGoalY = 1395,
@@ -136,7 +136,9 @@ class GameConfig {
   final double worldWidth;
   final double worldHeight;
 
-  /// Area that is filled with obstacle dots.
+  /// Area that is filled with obstacle dots. It spans the whole playable
+  /// width (pens are clamped to it horizontally) so there is no free lane
+  /// around the field.
   final Rect fieldRect;
 
   /// Where the top player (Player 2) starts each run.

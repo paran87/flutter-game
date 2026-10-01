@@ -38,11 +38,13 @@ class MovementController {
     return clampToPlayArea(position + delta);
   }
 
-  /// Keeps a pen fully inside the board.
+  /// Keeps a pen inside the playable area: the dot field's width (so nobody
+  /// can sneak around the dots) and the board's height.
   Offset clampToPlayArea(Offset p) {
     final r = config.playerRadius;
+    final field = config.fieldRect;
     return Offset(
-      p.dx.clamp(r, config.worldWidth - r),
+      p.dx.clamp(field.left + r, field.right - r),
       p.dy.clamp(r, config.worldHeight - r),
     );
   }

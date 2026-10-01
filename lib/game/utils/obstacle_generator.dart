@@ -16,7 +16,9 @@ ObstacleSize obstacleSizeFor(double radius, GameConfig config) {
 /// Rather than a grid or uniform scatter, dots are rejection-sampled against
 /// a density map built from:
 ///   * a handful of Gaussian *clusters* (dense patches),
-///   * a few *voids* (natural gaps/corridors),
+///   * a few *voids* (natural gaps),
+///   * 2–3 meandering *channels* from top to bottom — narrow risky
+///     shortcuts and wider detours, so careful drawing is rewarded,
 ///   * low-frequency wave noise (unevenness everywhere),
 ///   * a ragged edge falloff (the field has no hard rectangular border).
 /// Radii are skewed toward small dots so large blots stay special.
@@ -116,7 +118,14 @@ class ObstacleGenerator {
 
 /// Probability (0..1) of keeping a sampled dot at a given position.
 class _DensityMap {
-  _DensityMap(this.field, this.clusters, this.voids, this.waves, this.edgeSeed);
+  _DensityMap(
+    this.field,
+    this.clusters,
+    this.voids,
+    this.channels,
+    this.waves,
+    this.edgeSeed,
+  );
 
   factory _DensityMap.random(math.Random rng, Rect field) {
     Offset randomPoint() => Offset(
@@ -139,6 +148,9 @@ class _DensityMap {
           0.55 + rng.nextDouble() * 0.4,
         ),
     ];
+    final channels = [
+      for (var i = 0; i < 2 + rng.nextInt(2); i++) _Channel.random(rng, field),
+    ];
     final waves = [
       for (var i = 0; i < 4; i++)
         _Wave(
@@ -147,12 +159,20 @@ class _DensityMap {
           phase: rng.nextDouble() * math.pi * 2,
         ),
     ];
-    return _DensityMap(field, clusters, voids, waves, rng.nextDouble() * 100);
+    return _DensityMap(
+      field,
+      clusters,
+      voids,
+      channels,
+      waves,
+      rng.nextDouble() * 100,
+    );
   }
 
   final Rect field;
   final List<_Blob> clusters;
   final List<_Blob> voids;
+  final List<_Channel> channels;
   final List<_Wave> waves;
   final double edgeSeed;
 
@@ -169,21 +189,76 @@ class _DensityMap {
       noise += w.at(p);
     }
     d += 0.12 * noise / waves.length;
-    return d.clamp(0.0, 1.0) * _edge(p);
+    var open = 1.0;
+    for (final c in channels) {
+      open *= c.openness(p);
+    }
+    return d.clamp(0.0, 1.0) * open * _edge(p);
   }
 
-  /// Ragged falloff toward the field border.
+  /// Falloff toward the field border: torn and ragged at the top and bottom
+  /// (like the reference sketch), but only a thin fringe on the left and
+  /// right so the sides never become an empty, risk-free lane.
   double _edge(Offset p) {
     final distX = math.min(p.dx - field.left, field.right - p.dx);
     final distY = math.min(p.dy - field.top, field.bottom - p.dy);
-    final dist = math.min(distX, distY);
-    // Margin wobbles along the border so the edge looks torn, not ruled.
-    final wobble =
+    final wobbleY =
         22 +
         18 * math.sin(p.dx * 0.031 + edgeSeed) +
-        14 * math.sin(p.dy * 0.027 + edgeSeed * 1.7);
-    final t = (dist / wobble.clamp(8, 60)).clamp(0.0, 1.0);
+        14 * math.sin(p.dx * 0.011 + edgeSeed * 1.7);
+    final wobbleX = 6 + 4 * math.sin(p.dy * 0.043 + edgeSeed);
+    return _smooth(distY / wobbleY.clamp(8, 60)) * _smooth(distX / wobbleX);
+  }
+
+  static double _smooth(double x) {
+    final t = x.clamp(0.0, 1.0);
     return t * t * (3 - 2 * t);
+  }
+}
+
+/// A meandering, mostly-empty corridor running from the top of the field to
+/// the bottom. Its x position wanders like a random walk.
+class _Channel {
+  _Channel(this.top, this.step, this.xs, this.halfWidth, this.depth);
+
+  factory _Channel.random(math.Random rng, Rect field) {
+    const step = 40.0;
+    final count = (field.height / step).ceil() + 1;
+    var x = field.left + 90 + rng.nextDouble() * (field.width - 180);
+    var drift = 0.0;
+    final xs = <double>[];
+    for (var i = 0; i < count; i++) {
+      xs.add(x);
+      // Smoothed random walk: drift changes gradually, so the channel curves.
+      drift = drift * 0.7 + (rng.nextDouble() - 0.5) * 34;
+      x = (x + drift).clamp(field.left + 60, field.right - 60);
+    }
+    return _Channel(
+      field.top,
+      step,
+      xs,
+      18 + rng.nextDouble() * 22,
+      0.85 + rng.nextDouble() * 0.12,
+    );
+  }
+
+  final double top;
+  final double step;
+  final List<double> xs;
+
+  /// Gaussian half-width of the corridor (world units).
+  final double halfWidth;
+
+  /// How empty the corridor centre is (1 = no dots at all).
+  final double depth;
+
+  /// 1 away from the channel, approaching (1 - depth) at its centre.
+  double openness(Offset p) {
+    final t = ((p.dy - top) / step).clamp(0.0, xs.length - 1.001);
+    final i = t.floor();
+    final x = xs[i] + (xs[i + 1] - xs[i]) * (t - i);
+    final dx = p.dx - x;
+    return 1 - depth * math.exp(-dx * dx / (2 * halfWidth * halfWidth));
   }
 }
 

@@ -167,6 +167,7 @@ class _BalloonRow extends StatelessWidget {
         listenable: Listenable.merge([
           controller.balloonVersion,
           controller.phase,
+          controller.aimingAt,
         ]),
         builder: (context, _) {
           final phase = controller.phase.value;
@@ -207,6 +208,11 @@ class _BalloonRow extends StatelessWidget {
                       index: balloon.index,
                       popDuration: config.balloonAnimationDuration,
                       targetable: canTap && balloon.isAlive,
+                      aimed:
+                          underAttack &&
+                          attacker.identity.isBot &&
+                          controller.targetIndex == null &&
+                          controller.aimingAt.value == balloon.index,
                       attackerColor: attacker?.identity.color,
                       onTap: () => touchAgent?.selectBalloon(balloon.index),
                     ),

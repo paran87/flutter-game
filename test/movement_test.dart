@@ -80,7 +80,7 @@ void main() {
       dt: 1,
       maxSpeed: 1000,
     );
-    expect(next.dx, config.playerRadius);
+    expect(next.dx, config.fieldRect.left + config.playerRadius);
     expect(next.dy, config.playerRadius);
   });
 }
