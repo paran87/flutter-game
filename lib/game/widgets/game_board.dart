@@ -1,26 +1,28 @@
 import 'package:flutter/material.dart';
 
-import '../models/balloon.dart';
-import '../models/game_config.dart';
+import '../controllers/game_controller.dart';
+import '../models/obstacle_dot.dart';
 import '../models/player.dart';
 import '../rendering/board_decor_painter.dart';
 import '../rendering/board_transform.dart';
+import '../rendering/game_board_painter.dart';
+import '../rendering/obstacle_painter.dart';
 import 'balloon_widget.dart';
-import 'player_marker.dart';
 
 /// The playing surface: decor, dots, traces, markers and balloons.
+///
+/// Layers are split by how often they change:
+///   * decor and obstacles — cached behind RepaintBoundaries,
+///   * traces/markers/effects — one CustomPainter repainted per frame,
+///   * balloons — widgets, rebuilt only when balloon state changes.
 class GameBoard extends StatelessWidget {
   const GameBoard({
     super.key,
-    required this.config,
-    required this.bottom,
-    required this.top,
+    required this.controller,
     required this.onTransform,
   });
 
-  final GameConfig config;
-  final Player bottom;
-  final Player top;
+  final GameController controller;
 
   /// Reports the current world→screen mapping (needed for touch input).
   final ValueChanged<BoardTransform> onTransform;
@@ -29,9 +31,11 @@ class GameBoard extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final transform = BoardTransform.fit(constraints.biggest, config);
+        final transform = BoardTransform.fit(
+          constraints.biggest,
+          controller.config,
+        );
         onTransform(transform);
-        final balloonWidth = 92 * transform.scale;
         return Stack(
           clipBehavior: Clip.none,
           children: [
@@ -39,89 +43,101 @@ class GameBoard extends StatelessWidget {
               child: RepaintBoundary(
                 child: CustomPaint(
                   painter: BoardDecorPainter(
-                    config: config,
+                    config: controller.config,
                     transform: transform,
-                    topColor: top.identity.color,
-                    bottomColor: bottom.identity.color,
+                    topColor: controller.top.identity.color,
+                    bottomColor: controller.bottom.identity.color,
                   ),
                 ),
               ),
             ),
             Positioned.fill(
-              child: CustomPaint(
-                painter: _MockBoardPainter(transform, config, [bottom, top]),
+              child: RepaintBoundary(
+                child: ValueListenableBuilder<ObstacleField>(
+                  valueListenable: controller.field,
+                  builder: (context, field, _) => CustomPaint(
+                    painter: ObstaclePainter(
+                      field: field,
+                      transform: transform,
+                    ),
+                  ),
+                ),
               ),
             ),
-            for (final player in [top, bottom])
-              ..._balloons(player, transform, balloonWidth),
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  painter: GameBoardPainter(
+                    controller: controller,
+                    transform: transform,
+                  ),
+                ),
+              ),
+            ),
+            for (final player in controller.players)
+              _BalloonRow(
+                controller: controller,
+                player: player,
+                transform: transform,
+              ),
           ],
         );
       },
     );
   }
+}
 
-  Iterable<Widget> _balloons(
-    Player player,
-    BoardTransform transform,
-    double width,
-  ) sync* {
+/// One player's balloons, positioned in world space at their end of the board.
+class _BalloonRow extends StatelessWidget {
+  const _BalloonRow({
+    required this.controller,
+    required this.player,
+    required this.transform,
+  });
+
+  final GameController controller;
+  final Player player;
+  final BoardTransform transform;
+
+  @override
+  Widget build(BuildContext context) {
+    final config = controller.config;
     final xs = config.balloonXs(player.balloons.length);
     final y = player.isTop ? config.topBalloonY : config.bottomBalloonY;
-    for (final balloon in player.balloons) {
-      final center = transform.toScreen(Offset(xs[balloon.index], y));
-      final w = BalloonWidget(
-        color: player.identity.color,
-        status: balloon.status,
-        width: width,
-        index: balloon.index,
-      );
-      yield Positioned(
-        left: center.dx - width / 2,
-        top: center.dy - w.height * 0.4,
-        child: w,
-      );
-    }
-  }
-}
+    final width = 92 * transform.scale;
+    final height = width * 1.45;
+    final left = transform.toScreen(Offset(xs.first, y)).dx - width / 2;
+    final right = transform.toScreen(Offset(xs.last, y)).dx + width / 2;
+    final top = transform.toScreen(Offset(0, y)).dy - height * 0.4;
 
-/// Phase 1 placeholder: outlines the dot field and draws idle markers.
-class _MockBoardPainter extends CustomPainter {
-  _MockBoardPainter(this.transform, this.config, this.players);
-
-  final BoardTransform transform;
-  final GameConfig config;
-  final List<Player> players;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.save();
-    canvas.translate(transform.origin.dx, transform.origin.dy);
-    canvas.scale(transform.scale);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(config.fieldRect, const Radius.circular(24)),
-      Paint()
-        ..color = const Color(0x22000000)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3,
+    return Positioned(
+      left: left,
+      top: top,
+      width: right - left,
+      height: height,
+      child: ValueListenableBuilder<PlayerHudSnapshot>(
+        valueListenable: player.hud,
+        builder: (context, _, _) => Stack(
+          clipBehavior: Clip.none,
+          children: [
+            for (final balloon in player.balloons)
+              Positioned(
+                left:
+                    transform.toScreen(Offset(xs[balloon.index], y)).dx -
+                    width / 2 -
+                    left,
+                top: 0,
+                child: BalloonWidget(
+                  color: player.identity.color,
+                  status: balloon.status,
+                  width: width,
+                  index: balloon.index,
+                  popDuration: config.balloonAnimationDuration,
+                ),
+              ),
+          ],
+        ),
+      ),
     );
-    canvas.restore();
-    // Markers are drawn in screen space so labels keep a readable size.
-    for (final p in players) {
-      PlayerMarkerPainter.paint(
-        canvas,
-        transform.toScreen(p.position),
-        config.playerRadius * transform.scale,
-        p.identity.color,
-        label: p.identity.name,
-      );
-    }
   }
-
-  @override
-  bool shouldRepaint(_MockBoardPainter old) => true;
-}
-
-/// Mock balloon state helper for previews.
-extension MockBalloons on Player {
-  void mockPop(int index) => balloons[index].status = BalloonStatus.destroyed;
 }

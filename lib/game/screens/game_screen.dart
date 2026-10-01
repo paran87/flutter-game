@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../../app/theme.dart';
-import '../models/game_config.dart';
-import '../models/player.dart';
-import '../models/player_identities.dart';
+import '../controllers/game_controller.dart';
 import '../rendering/board_transform.dart';
 import '../rendering/paper_painter.dart';
 import '../widgets/game_board.dart';
 import '../widgets/scoreboard.dart';
 import '../widgets/timer_widget.dart';
 
-/// Phase 1: complete gameplay layout driven by static mock data.
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key});
 
@@ -18,46 +16,30 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> {
-  static const config = GameConfig();
-
-  late final Player _human = Player(
-    side: PlayerSide.bottom,
-    identity: humanIdentity,
-    startPosition: config.bottomStart,
-    balloons: config.balloonsPerPlayer,
-    maxAttempts: config.attemptsPerPlayer,
-  );
-  late final Player _bot = Player(
-    side: PlayerSide.top,
-    identity: botIdentity(config.botDifficulty),
-    startPosition: config.topStart,
-    balloons: config.balloonsPerPlayer,
-    maxAttempts: config.attemptsPerPlayer,
-  );
+class _GameScreenState extends State<GameScreen>
+    with SingleTickerProviderStateMixin {
+  late final GameController _controller = GameController();
+  late final Ticker _ticker = createTicker(_onTick);
+  Duration _lastTick = Duration.zero;
+  BoardTransform? _transform;
 
   @override
   void initState() {
     super.initState();
-    // Mock data so every HUD element has something to show.
-    _human
-      ..stats.bankedScore = 610
-      ..stats.totalDistance = 840
-      ..attemptsRemaining = 3
-      ..mockPop(2);
-    _human.publishHud(liveScore: 610, inkFraction: 0.82);
-    _bot
-      ..stats.bankedScore = 520
-      ..stats.totalDistance = 720
-      ..attemptsRemaining = 2
-      ..mockPop(0);
-    _bot.publishHud(liveScore: 520, inkFraction: 0.64);
+    _ticker.start();
+  }
+
+  void _onTick(Duration elapsed) {
+    // Clamp dt so a dropped frame or a resumed app can't teleport anything.
+    final dt = ((elapsed - _lastTick).inMicroseconds / 1e6).clamp(0.0, 1 / 20);
+    _lastTick = elapsed;
+    _controller.tick(dt);
   }
 
   @override
   void dispose() {
-    _human.dispose();
-    _bot.dispose();
+    _ticker.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -72,45 +54,13 @@ class _GameScreenState extends State<GameScreen> {
           SafeArea(
             child: Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: PlayerScoreCard(player: _bot)),
-                      const SizedBox(width: 6),
-                      const Column(
-                        children: [
-                          TimerWidget(
-                            seconds: 105,
-                            warningSeconds: 30,
-                            criticalSeconds: 10,
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'ROUND 2',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.5,
-                              color: AppColors.inkFaint,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(child: PlayerScoreCard(player: _human)),
-                    ],
-                  ),
-                ),
+                _TopBar(controller: _controller),
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 6),
                     child: GameBoard(
-                      config: config,
-                      bottom: _human,
-                      top: _bot,
-                      onTransform: (BoardTransform _) {},
+                      controller: _controller,
+                      onTransform: (t) => _transform = t,
                     ),
                   ),
                 ),
@@ -118,6 +68,51 @@ class _GameScreenState extends State<GameScreen> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.controller});
+
+  final GameController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final config = controller.config;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: PlayerScoreCard(player: controller.top)),
+          const SizedBox(width: 6),
+          Column(
+            children: [
+              TimerWidget(
+                seconds: config.gameDuration.inSeconds,
+                warningSeconds: config.timerWarningSeconds,
+                criticalSeconds: config.timerCriticalSeconds,
+              ),
+              const SizedBox(height: 4),
+              ValueListenableBuilder<int>(
+                valueListenable: controller.round,
+                builder: (context, round, _) => Text(
+                  'ROUND $round',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                    color: AppColors.inkFaint,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 6),
+          Expanded(child: PlayerScoreCard(player: controller.bottom)),
         ],
       ),
     );

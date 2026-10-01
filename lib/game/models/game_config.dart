@@ -80,9 +80,9 @@ class GameConfig {
     // Obstacles
     this.obstacleSeed,
     this.obstacleDensity = 1.0,
-    this.baseObstacleCount = 560,
+    this.baseObstacleCount = 680,
     this.minObstacleRadius = 3.2,
-    this.maxObstacleRadius = 15,
+    this.maxObstacleRadius = 16,
     this.minObstacleOpacity = 0.18,
     this.maxObstacleOpacity = 1.0,
     this.lightDotChance = 0.22,
