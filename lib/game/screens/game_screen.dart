@@ -10,6 +10,7 @@ import '../rendering/paper_painter.dart';
 import '../services/game_feedback.dart';
 import '../widgets/game_board.dart';
 import '../widgets/scoreboard.dart';
+import '../widgets/status_bar.dart';
 import '../widgets/timer_widget.dart';
 
 class GameScreen extends StatefulWidget {
@@ -122,7 +123,15 @@ class _GameScreenState extends State<GameScreen>
                       ),
                     ),
                   ),
-                  const SizedBox(height: 40),
+                  SizedBox(
+                    height: 40,
+                    child: Center(
+                      child: StatusBar(
+                        controller: _controller,
+                        player: _controller.bottom,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

@@ -101,10 +101,15 @@ class TraceRenderer {
 
     // Pen pressure drifts slowly from chunk to chunk.
     final pressure = 0.5 + 0.5 * math.sin(chunkIndex * 0.9 + seed);
+
+    // Like a real ballpoint running dry, the last 20% of the ink gets
+    // visibly fainter — a natural warning that the run is about to fail.
+    final used = trace.length * (from / (pts.length - 1)) / config.inkCapacity;
+    final starvation = ((used - 0.8) / 0.2).clamp(0.0, 1.0);
     return _Chunk(
       path,
-      widthFactor: 0.88 + 0.24 * pressure,
-      inkFactor: 0.84 + 0.16 * pressure,
+      widthFactor: (0.88 + 0.24 * pressure) * (1 - 0.3 * starvation),
+      inkFactor: (0.84 + 0.16 * pressure) * (1 - 0.55 * starvation),
     );
   }
 

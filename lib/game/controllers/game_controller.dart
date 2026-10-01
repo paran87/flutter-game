@@ -4,9 +4,9 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 
 import '../../app/theme.dart';
-
 import '../models/game_config.dart';
 import '../models/game_state.dart';
+import '../models/game_stats.dart';
 import '../models/ink_trace.dart';
 import '../models/obstacle_dot.dart';
 import '../models/player.dart';
@@ -19,8 +19,41 @@ import 'movement_controller.dart';
 import 'player_agent.dart';
 import 'scoring_controller.dart';
 
+/// A successful crossing, shown in the "RUN COMPLETE" card.
+class RunSuccess {
+  const RunSuccess(this.player, this.summary);
+
+  final Player player;
+  final RunSummary summary;
+}
+
+/// A failed run, shown as a toast near that player's side.
+class RunFailure {
+  const RunFailure(this.player, this.reason, this.serial);
+
+  final Player player;
+  final FailureReason reason;
+
+  /// Increments per failure so identical consecutive failures still notify.
+  final int serial;
+}
+
 /// Central game state machine. Owns players, the obstacle field, the clock
 /// and round progression. Widgets only read from it and forward input.
+///
+/// Flow of a round:
+///
+///   intro/nextRound → countdown → playing ──(someone crosses)──► playerSuccess
+///        ▲                          │                                │
+///        │                     (run fails: that player resets,       ▼
+///        │                      the other keeps racing)          targeting
+///        │                                                           │
+///        └────────────── nextRound ◄──── balloonDestroyed ◄──────────┘
+///                                              │
+///                                   (all balloons gone) ──► gameOver
+///
+/// All timing is driven by [tick], so the whole match can be simulated
+/// headlessly in tests.
 class GameController {
   GameController({
     this.config = const GameConfig(),
@@ -47,10 +80,10 @@ class GameController {
     );
     _collisions = {for (final p in players) p: CollisionController(config)};
     _generateField();
-    phase.value = GamePhase.playing;
     for (final p in players) {
       _startRun(p);
     }
+    _setPhase(GamePhase.playing);
   }
 
   final GameConfig config;
@@ -62,10 +95,6 @@ class GameController {
   final int _baseSeed;
   final MovementController _movement;
   late final Map<Player, CollisionController> _collisions;
-
-  /// Simulated game time in seconds (advances only via [tick]).
-  double _time = 0;
-  double get time => _time;
 
   late final Player bottom;
   late final Player top;
@@ -85,9 +114,31 @@ class GameController {
   final ValueNotifier<GamePhase> phase = ValueNotifier(GamePhase.intro);
   final ValueNotifier<int> round = ValueNotifier(1);
 
+  /// The most recent crossing (drives the run summary card).
+  final ValueNotifier<RunSuccess?> lastSuccess = ValueNotifier(null);
+
+  /// The most recent failed run (drives failure toasts).
+  final ValueNotifier<RunFailure?> lastFailure = ValueNotifier(null);
+  int _failureSerial = 0;
+
+  /// Simulated game time in seconds (advances only via [tick]).
+  double _time = 0;
+  double get time => _time;
+
+  /// Seconds spent in the current [phase].
+  double _phaseTime = 0;
+  double get phaseTime => _phaseTime;
+
+  /// The player who crossed this round (attacker during targeting).
+  Player? _roundWinner;
+  Player? get roundWinner => _roundWinner;
+
   PlayerAgent agentFor(Player p) =>
       identical(p, bottom) ? bottomAgent : topAgent;
   Player opponentOf(Player p) => identical(p, bottom) ? top : bottom;
+  CollisionController collisionsFor(Player p) => _collisions[p]!;
+
+  bool get isPlaying => phase.value == GamePhase.playing;
 
   AgentContext _contextFor(Player p) => AgentContext(
     config: config,
@@ -96,13 +147,18 @@ class GameController {
     opponent: opponentOf(p),
   );
 
+  // ------------------------------------------------------------ Lifecycle
+
+  void _setPhase(GamePhase next) {
+    _phaseTime = 0;
+    phase.value = next;
+  }
+
   void _generateField() {
     // Each round gets its own layout, reproducible from the base seed.
     final seed = _baseSeed + (round.value - 1) * 7919;
     field.value = ObstacleGenerator(config).generate(seed);
   }
-
-  CollisionController collisionsFor(Player p) => _collisions[p]!;
 
   void _startRun(Player p) {
     p.resetToStart();
@@ -114,17 +170,29 @@ class GameController {
   /// Advances the simulation by [dt] seconds.
   void tick(double dt) {
     _time += dt;
+    _phaseTime += dt;
     effects.tick(dt);
     for (final t in fadingTraces) {
       t.age += dt;
     }
     fadingTraces.removeWhere((t) => t.isDone);
 
-    if (phase.value == GamePhase.playing) {
-      for (final p in players) {
-        _updatePlayer(p, dt);
-      }
+    switch (phase.value) {
+      case GamePhase.playing:
+        _tickPlaying(dt);
+      case GamePhase.playerSuccess:
+        if (_phaseTime >= _seconds(config.successSummaryDuration)) {
+          _beginNextRound();
+        }
+      case GamePhase.intro:
+      case GamePhase.countdown:
+      case GamePhase.targeting:
+      case GamePhase.balloonDestroyed:
+      case GamePhase.nextRound:
+      case GamePhase.gameOver:
+        break;
     }
+
     for (final p in players) {
       p.slowdownRemaining = math.max(0, p.slowdownRemaining - dt);
       p.shakeRemaining = math.max(0, p.shakeRemaining - dt);
@@ -133,10 +201,48 @@ class GameController {
     frame.ping();
   }
 
+  void _tickPlaying(double dt) {
+    for (final p in players) {
+      switch (p.runStatus) {
+        case RunStatus.ready:
+        case RunStatus.running:
+          _updatePlayer(p, dt);
+        case RunStatus.failed:
+          p.statusTime += dt;
+          if (p.statusTime >= _seconds(config.failureResetDuration)) {
+            _startRun(p);
+          }
+        case RunStatus.finished:
+        case RunStatus.halted:
+        case RunStatus.eliminated:
+          break;
+      }
+      // A crossing ends the round immediately for both players.
+      if (!isPlaying) return;
+    }
+    if (bottom.runStatus == RunStatus.eliminated &&
+        top.runStatus == RunStatus.eliminated) {
+      _setPhase(GamePhase.gameOver);
+    }
+  }
+
+  // ------------------------------------------------------------- Movement
+
   void _updatePlayer(Player p, double dt) {
-    if (!p.canMove) return;
     final agent = agentFor(p);
     final intent = agent.update(dt, _contextFor(p));
+
+    // Lifting the pen mid-run starts a grace countdown.
+    if (p.runStatus == RunStatus.running && !intent.penDown) {
+      p.penLiftedFor += dt;
+      if (config.penLiftFailsRun &&
+          p.penLiftedFor >= _seconds(config.penLiftGracePeriod)) {
+        _failRun(p, FailureReason.penLifted);
+      }
+      return;
+    }
+    p.penLiftedFor = 0;
+
     final target = intent.target;
     if (target == null) return;
 
@@ -155,13 +261,23 @@ class GameController {
         (p.position - p.startPosition).distance > config.runStartThreshold) {
       p.runStatus = RunStatus.running;
     }
-    if (p.runStatus == RunStatus.running) {
-      // The same points feed the ballpoint rendering and distance tracking.
-      p.trace.addPoint(p.position, minSpacing: config.minTracePointSpacing);
-      p.run.distance = scoring.distanceFromWorld(p.trace.length);
-    }
+    if (p.runStatus != RunStatus.running) return;
+
+    // The same points feed the ballpoint rendering and distance tracking.
+    p.trace.addPoint(p.position, minSpacing: config.minTracePointSpacing);
+    p.run.distance = scoring.distanceFromWorld(p.trace.length);
     _checkCollisions(p, from, p.position);
+
+    if (_reachedGoal(p)) {
+      _succeedRun(p);
+    } else if (p.trace.length >= config.inkCapacity) {
+      _failRun(p, FailureReason.outOfInk);
+    }
   }
+
+  bool _reachedGoal(Player p) => p.isTop
+      ? p.position.dy >= config.topGoalY
+      : p.position.dy <= config.bottomGoalY;
 
   void _checkCollisions(Player p, Offset from, Offset to) {
     final hits = _collisions[p]!.step(field.value, from, to, _time);
@@ -177,10 +293,70 @@ class GameController {
       );
     }
     // Feedback, but never a stop: the pen keeps moving.
-    p.slowdownRemaining = config.collisionSlowdownDuration.inMicroseconds / 1e6;
+    p.slowdownRemaining = _seconds(config.collisionSlowdownDuration);
     p.shakeRemaining = 0.22;
     feedback.obstacleTouched(local: !p.identity.isBot);
   }
+
+  // ------------------------------------------------------- Run outcomes
+
+  void _succeedRun(Player p) {
+    p.runStatus = RunStatus.finished;
+    p.stats.successfulRuns++;
+    final summary = scoring.closeRun(p, bank: true);
+    _roundWinner = p;
+    lastSuccess.value = RunSuccess(p, summary);
+    effects.burst(p.position, p.identity.color, maxRadius: 120, duration: 0.9);
+    feedback.runSucceeded(local: !p.identity.isBot);
+
+    // The other player's run is cut short by the crossing.
+    final other = opponentOf(p);
+    if (other.runStatus == RunStatus.running ||
+        other.runStatus == RunStatus.ready) {
+      scoring.closeRun(other, bank: config.bankInterruptedRunScore);
+      other.runStatus = RunStatus.halted;
+    }
+    _setPhase(GamePhase.playerSuccess);
+  }
+
+  void _failRun(Player p, FailureReason reason) {
+    p.runStatus = RunStatus.failed;
+    p.failureReason = reason;
+    p.statusTime = 0;
+    p.attemptsRemaining = math.max(0, p.attemptsRemaining - 1);
+    p.stats.failedRuns++;
+    scoring.closeRun(p, bank: false);
+
+    // The failed line fades away; cumulative stats are kept.
+    fadingTraces.add(
+      FadingTrace(
+        p.trace,
+        p.identity.color,
+        _seconds(config.failureResetDuration),
+      ),
+    );
+    p.beginFreshTrace();
+    effects.burst(p.position, AppColors.danger, maxRadius: 70);
+    lastFailure.value = RunFailure(p, reason, ++_failureSerial);
+    feedback.runFailed(local: !p.identity.isBot);
+  }
+
+  // --------------------------------------------------------------- Rounds
+
+  void _beginNextRound() {
+    round.value++;
+    _roundWinner = null;
+    _generateField();
+    effects.clear();
+    fadingTraces.clear();
+    for (final p in players) {
+      agentFor(p).reset();
+      _startRun(p);
+    }
+    _setPhase(GamePhase.playing);
+  }
+
+  // ------------------------------------------------------------------ HUD
 
   double inkFraction(Player p) =>
       (1 - p.trace.length / config.inkCapacity).clamp(0.0, 1.0);
@@ -189,12 +365,16 @@ class GameController {
     p.publishHud(liveScore: scoring.liveScore(p), inkFraction: inkFraction(p));
   }
 
+  static double _seconds(Duration d) => d.inMicroseconds / 1e6;
+
   void dispose() {
     feedback.dispose();
     frame.dispose();
     field.dispose();
     phase.dispose();
     round.dispose();
+    lastSuccess.dispose();
+    lastFailure.dispose();
     bottomAgent.dispose();
     topAgent.dispose();
     for (final p in players) {

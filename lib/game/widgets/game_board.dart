@@ -11,6 +11,7 @@ import '../rendering/obstacle_painter.dart';
 import '../rendering/effects_painter.dart';
 import '../rendering/trace_painter.dart';
 import 'balloon_widget.dart';
+import 'board_overlays.dart';
 
 /// The playing surface: decor, dots, traces, markers and balloons.
 ///
@@ -101,6 +102,12 @@ class _GameBoardState extends State<GameBoard> {
                 player: player,
                 transform: transform,
               ),
+            Positioned.fill(
+              child: BoardOverlays(
+                controller: controller,
+                transform: transform,
+              ),
+            ),
           ],
         );
       },

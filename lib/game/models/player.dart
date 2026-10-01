@@ -149,6 +149,12 @@ class Player {
       if (b.isAlive) b.index,
   ];
 
+  /// Replaces the trace with an empty one at the start position (the old
+  /// trace object can then fade out independently).
+  void beginFreshTrace() {
+    trace = InkTrace(id: _nextTraceId++, start: startPosition);
+  }
+
   /// Starts a fresh run trace at the start position.
   void resetToStart() {
     position = startPosition;

@@ -1,7 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter/rendering.dart';
+
+import '../../app/theme.dart';
 
 import '../controllers/game_controller.dart';
 import '../controllers/player_agent.dart';
+import '../models/game_state.dart';
 import '../models/player.dart';
 import '../widgets/player_marker.dart';
 import 'board_transform.dart';
@@ -84,13 +89,72 @@ class GameBoardPainter extends CustomPainter {
   }
 
   void _paintMarker(Canvas canvas, Player player) {
+    final config = controller.config;
+    final center = transform.toScreen(player.position);
+    final radius = config.playerRadius * transform.scale;
+    var opacity = 1.0;
+    var dim = false;
+    switch (player.runStatus) {
+      case RunStatus.failed:
+        // Blink, then fade before reappearing at the start.
+        final t =
+            player.statusTime /
+            (config.failureResetDuration.inMicroseconds / 1e6);
+        final blink = (player.statusTime * 9).floor().isEven ? 1.0 : 0.35;
+        opacity = blink * (1 - t).clamp(0.0, 1.0);
+        dim = true;
+      case RunStatus.eliminated:
+        opacity = 0.45;
+        dim = true;
+      case RunStatus.ready:
+      case RunStatus.running:
+      case RunStatus.finished:
+      case RunStatus.halted:
+        break;
+    }
+
+    // Pen lifted mid-run: a ring drains as the grace period runs out.
+    if (player.runStatus == RunStatus.running && player.penLiftedFor > 0) {
+      final grace = config.penLiftGracePeriod.inMicroseconds / 1e6;
+      final remaining = (1 - player.penLiftedFor / grace).clamp(0.0, 1.0);
+      final ringRadius = radius * 3.4;
+      canvas.drawCircle(
+        center,
+        ringRadius,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..color = AppColors.danger.withValues(alpha: 0.15),
+      );
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: ringRadius),
+        -math.pi / 2,
+        math.pi * 2 * remaining,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..strokeCap = StrokeCap.round
+          ..color = AppColors.danger,
+      );
+    }
+
+    // A gentle "breathing" halo invites the player to start drawing.
+    final idlePulse =
+        player.runStatus == RunStatus.ready && controller.isPlaying
+        ? (controller.time * 1.2) % 1.0
+        : 0.0;
+
     PlayerMarkerPainter.paint(
       canvas,
-      transform.toScreen(player.position),
-      controller.config.playerRadius * transform.scale,
+      center,
+      radius,
       player.identity.color,
       label: player.identity.name,
       shake: player.shakeRemaining / 0.22,
+      pulse: idlePulse,
+      dim: dim,
+      opacity: opacity,
     );
   }
 
