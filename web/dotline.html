@@ -101,7 +101,7 @@ let profile={name:'Player',mmr:850,wins:12,losses:7,
   history:[{w:true,score:1420,vs:890},{w:false,score:640,vs:980},{w:true,score:1100,vs:720}]};
 try{const _s=JSON.parse(localStorage.getItem('dotline_profile')||'null');
   if(_s&&_s.mmr!==undefined)profile=_s;}catch(_e){}
-let homeBtn=null,lastMmrChange=0,searchT=0,searchPhase=0;
+let homeBtn=null,overBtns=null,lastMmrChange=0,searchT=0,searchPhase=0;
 
 function mkP(id,sx,sy,color){
   return{id,x:sx,y:sy,penX:sx,penY:sy,tgtX:sx,tgtY:sy,
@@ -300,7 +300,18 @@ function clientToCanvas(ex,ey){
 }
 cvs.addEventListener('pointerdown',e=>{
   e.preventDefault();
-  if(phase==='start'||phase==='over'){phase='home';return;}
+  if(phase==='start'){phase='home';return;}
+  if(phase==='over'){
+    if(overBtns){
+      const[cx_,cy_]=clientToCanvas(e.clientX,e.clientY);
+      const{home,rematch}=overBtns;
+      if(cx_>=home.x&&cx_<=home.x+home.w&&cy_>=home.y&&cy_<=home.y+home.h){phase='home';return;}
+      if(cx_>=rematch.x&&cx_<=rematch.x+rematch.w&&cy_>=rematch.y&&cy_<=rematch.y+rematch.h){
+        searchT=0;searchPhase=0;phase='searching';return;
+      }
+    }
+    return;
+  }
   if(phase==='home'){
     if(homeBtn){
       const[cx_,cy_]=clientToCanvas(e.clientX,e.clientY);
@@ -1016,42 +1027,57 @@ function drawSearching(){
 function drawOver(){
   drawBoard();
   drawHUD();
-  // Overlay
-  ctx.fillStyle=rgba(CO.paper,0.88);
-  rr(ws(40),CH/2-ws(160),CW-ws(80),ws(320),ws(22));ctx.fill();
+  // Overlay card (taller to fit buttons)
+  const cardX=ws(40),cardY=CH/2-ws(168),cardW=CW-ws(80),cardH=ws(375);
+  rr(cardX,cardY,cardW,cardH,ws(22));
+  ctx.fillStyle=rgba(CO.paper,0.92);ctx.fill();
   ctx.strokeStyle=rgba(CO.ink,0.15);ctx.lineWidth=1.5;ctx.stroke();
   const isP1=winner==='p1';
   const wColor=isP1?CO.p1:winner==='p2'?CO.p2:CO.ifaint;
   ctx.font=`700 ${ws(36)}px "Oswald",system-ui`;
   ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.fillStyle=wColor;
-  ctx.fillText(winner==='draw'?'DRAW':isP1?'YOU WIN!':'BOT WINS',CW/2,CH/2-ws(80));
+  ctx.fillText(winner==='draw'?'DRAW':isP1?'YOU WIN!':'BOT WINS',CW/2,CH/2-ws(82));
   ctx.font=`${ws(11)}px system-ui`;ctx.fillStyle=rgba(CO.isoft,0.8);
-  const reason=winner==='draw'?'Time up — equal score':
-    isP1?'Higher score at time up':'Higher score at time up';
-  ctx.fillText(reason,CW/2,CH/2-ws(40));
+  const reason=winner==='draw'?'Time up — equal score':'Higher score at time up';
+  ctx.fillText(reason,CW/2,CH/2-ws(42));
   // Scores
   ctx.font=`700 ${ws(22)}px "Oswald",system-ui`;
   ctx.fillStyle=CO.p1;ctx.textAlign='left';
-  ctx.fillText('YOU  '+Math.round(p1.score),CW/2-ws(95),CH/2+ws(20));
+  ctx.fillText('YOU  '+Math.round(p1.score),CW/2-ws(95),CH/2+ws(18));
   ctx.fillStyle=CO.p2;ctx.textAlign='right';
-  ctx.fillText('BOT  '+Math.round(p2.score),CW/2+ws(95),CH/2+ws(20));
+  ctx.fillText('BOT  '+Math.round(p2.score),CW/2+ws(95),CH/2+ws(18));
   // MMR change
   if(winner!=='draw'){
     const isPos=lastMmrChange>=0;
     ctx.font=`700 ${ws(20)}px "Oswald",system-ui`;
     ctx.fillStyle=isPos?rgba(CO.ok,0.9):rgba(CO.danger,0.9);ctx.textAlign='center';
-    ctx.fillText((isPos?'+':'')+lastMmrChange+' MMR',CW/2,CH/2+ws(62));
+    ctx.fillText((isPos?'+':'')+lastMmrChange+' MMR',CW/2,CH/2+ws(58));
     const curRk=getRank(profile.mmr);
     ctx.font=`${ws(10)}px system-ui`;
     ctx.fillStyle=rgba(CO.isoft,0.65);
-    ctx.fillText(curRk.name+' · '+profile.mmr+' MMR total',CW/2,CH/2+ws(82));
+    ctx.fillText(curRk.name+' · '+profile.mmr+' MMR total',CW/2,CH/2+ws(76));
   }
-  // Tap for home
-  const tapA=0.55+0.45*Math.sin(startT*3);
-  ctx.font=`900 ${ws(13)}px system-ui`;
-  ctx.fillStyle=rgba(CO.ink,tapA);ctx.textAlign='center';
-  ctx.fillText('TAP FOR HOME',CW/2,CH/2+ws(110));
+  // Buttons
+  const btnGap=10,btnPad=16,bH=40;
+  const bW=(cardW-btnPad*2-btnGap)/2;
+  const bX1=cardX+btnPad,bX2=cardX+btnPad+bW+btnGap;
+  const bY=CH/2+ws(100);
+  // HOME button
+  rr(bX1,bY,bW,bH,10);
+  ctx.fillStyle=rgba(CO.isoft,0.1);ctx.fill();
+  ctx.strokeStyle=rgba(CO.isoft,0.3);ctx.lineWidth=1.5;ctx.stroke();
+  ctx.font=`700 ${Math.max(11,ws(14))}px "Oswald",system-ui`;
+  ctx.fillStyle=CO.ink;ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('< HOME',bX1+bW/2,bY+bH/2);
+  // REMATCH button
+  rr(bX2,bY,bW,bH,10);
+  ctx.fillStyle=rgba(CO.p1,0.88);ctx.fill();
+  ctx.strokeStyle=rgba(CO.p1l,0.35);ctx.lineWidth=1.5;ctx.stroke();
+  ctx.font=`700 ${Math.max(11,ws(14))}px "Oswald",system-ui`;
+  ctx.fillStyle='white';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('REMATCH >',bX2+bW/2,bY+bH/2);
+  overBtns={home:{x:bX1,y:bY,w:bW,h:bH},rematch:{x:bX2,y:bY,w:bW,h:bH}};
 }
 
 /* ── Main loop ── */
