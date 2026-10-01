@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../game/screens/game_screen.dart';
 import '../game/screens/home_screen.dart';
+import '../game/screens/room_screen.dart';
 import '../game/screens/settings_screen.dart';
 import '../game/screens/tutorial_screen.dart';
 import '../game/services/settings_controller.dart';
@@ -13,6 +14,7 @@ const _matchSecondsOverride = int.fromEnvironment('MATCH_SECONDS');
 abstract final class AppRoutes {
   static const home = '/';
   static const game = '/game';
+  static const room = '/room';
   static const tutorial = '/tutorial';
   static const settings = '/settings';
 }
@@ -54,6 +56,7 @@ class _DotlineDuelAppState extends State<DotlineDuelApp> {
   Route<dynamic> _onGenerateRoute(RouteSettings route) {
     final Widget page = switch (route.name) {
       AppRoutes.game => gameScreenFor(_settings.value),
+      AppRoutes.room => const RoomScreen(),
       AppRoutes.tutorial => const TutorialScreen(),
       AppRoutes.settings => const SettingsScreen(),
       _ => const HomeScreen(),

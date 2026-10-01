@@ -13,6 +13,7 @@ import '../rendering/paper_painter.dart';
 import '../services/audio_service.dart';
 import '../services/game_feedback.dart';
 import '../services/haptics_service.dart';
+import '../services/room_service.dart';
 import '../services/settings_controller.dart';
 import '../widgets/game_board.dart';
 import '../widgets/pause_overlay.dart';
@@ -26,10 +27,19 @@ class GameScreen extends StatefulWidget {
     super.key,
     this.config = const GameConfig(),
     this.settings = const GameSettings(),
+    // Injected for network mode; null → use BotController.
+    this.topAgent,
+    this.roomService,
   });
 
   final GameConfig config;
   final GameSettings settings;
+
+  /// The agent driving the top player. When null a BotController is created.
+  final PlayerAgent? topAgent;
+
+  /// When non-null, the local player's position is broadcast each frame.
+  final RoomService? roomService;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -43,7 +53,8 @@ class _GameScreenState extends State<GameScreen>
   late final GameController _controller = GameController(
     config: widget.config,
     bottomAgent: _human,
-    topAgent: BotController(difficulty: widget.config.botDifficulty),
+    topAgent: widget.topAgent ??
+        BotController(difficulty: widget.config.botDifficulty),
     feedback: GameFeedback(
       audio: SystemAudioService()..enabled = widget.settings.soundEnabled,
       haptics: HapticsService(enabled: widget.settings.hapticsEnabled),
@@ -74,6 +85,12 @@ class _GameScreenState extends State<GameScreen>
     final dt = ((elapsed - _lastTick).inMicroseconds / 1e6).clamp(0.0, 1 / 20);
     _lastTick = elapsed;
     _controller.tick(dt);
+    // Broadcast local position in network mode.
+    widget.roomService?.sendPosition(
+      _controller.bottom.position.dx,
+      _controller.bottom.position.dy,
+      _human.isTouching,
+    );
     _maybeShowResult();
   }
 
@@ -140,6 +157,7 @@ class _GameScreenState extends State<GameScreen>
     WidgetsBinding.instance.removeObserver(this);
     _ticker.dispose();
     _controller.dispose();
+    // roomService is owned by the RoomScreen; we only hold a reference.
     super.dispose();
   }
 

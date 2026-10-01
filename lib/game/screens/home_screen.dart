@@ -5,6 +5,7 @@ import '../../app/theme.dart';
 import '../models/game_config.dart';
 import '../rendering/paper_painter.dart';
 import '../services/settings_controller.dart';
+import '../services/supabase_config.dart';
 import '../widgets/home_backdrop.dart';
 import '../widgets/ink_button.dart';
 
@@ -142,8 +143,24 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       ),
                       const SizedBox(height: AppSpacing.md),
+                      if (SupabaseConfig.isConfigured)
+                        _rise(
+                          0.55,
+                          InkButton(
+                            label: 'PRIVATE ROOM',
+                            icon: Icons.people_alt_rounded,
+                            onPressed: () =>
+                                Navigator.of(context).pushNamed(AppRoutes.room),
+                          ),
+                        )
+                      else
+                        _rise(
+                          0.55,
+                          _PrivateRoomUnconfiguredChip(),
+                        ),
+                      const SizedBox(height: AppSpacing.md),
                       _rise(
-                        0.55,
+                        0.60,
                         InkButton(
                           label: 'HOW TO PLAY',
                           icon: Icons.menu_book_rounded,
@@ -154,7 +171,7 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                       const SizedBox(height: AppSpacing.md),
                       _rise(
-                        0.62,
+                        0.67,
                         InkButton(
                           label: 'SETTINGS',
                           icon: Icons.tune_rounded,
@@ -216,6 +233,59 @@ class _OpponentChip extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown when Supabase is not configured — tapping explains the requirement.
+class _PrivateRoomUnconfiguredChip extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Multiplayer not configured'),
+          content: const Text(
+            'To enable Private Room mode, build the app with '
+            'your Supabase project credentials:\n\n'
+            'flutter run \\\n'
+            '  --dart-define=SUPABASE_URL=https://xxx.supabase.co \\\n'
+            '  --dart-define=SUPABASE_ANON_KEY=eyJ...',
+            style: TextStyle(fontFamily: 'monospace', fontSize: 13),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.inkFaint.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          border: Border.all(color: AppColors.inkFaint.withValues(alpha: 0.3)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.people_alt_rounded, size: 16, color: AppColors.inkFaint),
+            SizedBox(width: 6),
+            Text(
+              'PRIVATE ROOM · NOT CONFIGURED',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1,
+                color: AppColors.inkFaint,
+              ),
+            ),
+          ],
         ),
       ),
     );
