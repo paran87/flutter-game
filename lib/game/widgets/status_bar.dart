@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
 import '../controllers/game_controller.dart';
+import '../controllers/player_agent.dart';
 import '../models/game_state.dart';
 import '../models/player.dart';
 
@@ -47,6 +48,14 @@ class _StatusBarState extends State<StatusBar> {
     }
     switch (p.runStatus) {
       case RunStatus.ready:
+        final agent = c.agentFor(p);
+        if (agent is TouchPlayerAgent && agent.awaitingRelease) {
+          return const _Hint(
+            'Lift your finger, then draw again from your pen',
+            AppColors.inkSoft,
+            Icons.front_hand_outlined,
+          );
+        }
         return const _Hint(
           'Drag below your pen to start drawing',
           AppColors.inkSoft,
@@ -73,18 +82,32 @@ class _StatusBarState extends State<StatusBar> {
           );
         }
         if (c.inkFraction(p) < 0.25) {
-          return const _Hint(
-            'Ink running low — head for the line!',
+          return _Hint(
+            p.hasCrossed
+                ? 'Ink running low — hit a balloon now!'
+                : 'Ink running low — head for the line!',
             AppColors.warning,
             Icons.water_drop_outlined,
           );
         }
+        if (p.hasCrossed) {
+          return _Hint(
+            'Steer into a ${c.opponentOf(p).identity.name} balloon to pop it!',
+            p.identity.color,
+            Icons.ads_click_rounded,
+          );
+        }
         return const _Hint(
-          'Reach the dashed line on the far side',
+          'Cross the dashed line, then hit a balloon',
           AppColors.inkFaint,
           Icons.flag_outlined,
         );
       case RunStatus.finished:
+        return _Hint(
+          'Balloon popped! Back to your start…',
+          p.identity.color,
+          Icons.celebration_outlined,
+        );
       case RunStatus.halted:
         return const _Hint('', AppColors.inkFaint);
     }

@@ -52,6 +52,7 @@ class PlayerHudSnapshot {
     required this.balloonsDestroyed,
     required this.inkPercent,
     required this.runStatus,
+    required this.hunting,
   });
 
   final int score;
@@ -65,6 +66,9 @@ class PlayerHudSnapshot {
   final int inkPercent;
   final RunStatus runStatus;
 
+  /// Crossed the opponent's line and is now going for a balloon.
+  final bool hunting;
+
   @override
   bool operator ==(Object other) =>
       other is PlayerHudSnapshot &&
@@ -77,7 +81,8 @@ class PlayerHudSnapshot {
       other.balloonsStanding == balloonsStanding &&
       other.balloonsDestroyed == balloonsDestroyed &&
       other.inkPercent == inkPercent &&
-      other.runStatus == runStatus;
+      other.runStatus == runStatus &&
+      other.hunting == hunting;
 
   @override
   int get hashCode => Object.hash(
@@ -91,6 +96,7 @@ class PlayerHudSnapshot {
     balloonsDestroyed,
     inkPercent,
     runStatus,
+    hunting,
   );
 }
 
@@ -133,8 +139,11 @@ class Player {
   /// Seconds the pen has been lifted during a running run.
   double penLiftedFor = 0;
 
-  /// Seconds spent in the current [runStatus] (used for failure animation).
+  /// Seconds spent in the current [runStatus] (failure/respawn timing).
   double statusTime = 0;
+
+  /// This run has crossed the opponent's line and may now pop a balloon.
+  bool hasCrossed = false;
 
   late final ValueNotifier<PlayerHudSnapshot> hud = ValueNotifier(
     _snapshot(0, 1),
@@ -144,6 +153,11 @@ class Player {
   bool get canMove =>
       runStatus == RunStatus.ready || runStatus == RunStatus.running;
   int get balloonsStanding => balloons.where((b) => b.isStanding).length;
+  List<Balloon> get aliveBalloons => [
+    for (final b in balloons)
+      if (b.isAlive) b,
+  ];
+
   List<int> get aliveBalloonIndexes => [
     for (final b in balloons)
       if (b.isAlive) b.index,
@@ -166,11 +180,17 @@ class Player {
     shakeRemaining = 0;
     penLiftedFor = 0;
     statusTime = 0;
+    hasCrossed = false;
   }
+
+  /// True while this player has crossed and is hunting a balloon. A
+  /// separate notifier so the opponent's balloons only rebuild when it flips.
+  final ValueNotifier<bool> hunting = ValueNotifier(false);
 
   /// Publishes the HUD snapshot; listeners fire only on visible changes.
   void publishHud({required int liveScore, required double inkFraction}) {
     hud.value = _snapshot(liveScore, inkFraction);
+    hunting.value = hud.value.hunting;
   }
 
   PlayerHudSnapshot _snapshot(int liveScore, double inkFraction) {
@@ -185,8 +205,12 @@ class Player {
       balloonsDestroyed: stats.balloonsDestroyed,
       inkPercent: (inkFraction.clamp(0.0, 1.0) * 100).round(),
       runStatus: runStatus,
+      hunting: hasCrossed && runStatus == RunStatus.running,
     );
   }
 
-  void dispose() => hud.dispose();
+  void dispose() {
+    hud.dispose();
+    hunting.dispose();
+  }
 }

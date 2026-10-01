@@ -83,8 +83,10 @@ void main() {
       expect(c.result.value!.bottom.distance, greaterThan(0));
     });
 
-    test('the clock pauses while a balloon is being attacked', () {
-      final human = ScriptedAgent(waypoints: const [Offset(500, 150)]);
+    test('the clock keeps running through a pop (no round breaks)', () {
+      final human = ScriptedAgent(
+        waypoints: const [Offset(500, 150), Offset(500, 82)],
+      );
       final c = skipToPlaying(
         GameController(
           config: quick.copyWith(gameDuration: const Duration(seconds: 60)),
@@ -92,10 +94,10 @@ void main() {
           topAgent: IdleAgent(),
         ),
       );
-      runUntil(c, () => c.phase.value == GamePhase.targeting);
+      runUntil(c, () => c.bottom.stats.balloonsDestroyed == 1);
       final before = c.timer.remaining;
-      runFor(c, 0.3);
-      expect(c.timer.remaining, before);
+      runFor(c, 0.5);
+      expect(c.timer.remaining, closeTo(before - 0.5, 0.02));
     });
 
     test('pausing freezes everything', () {

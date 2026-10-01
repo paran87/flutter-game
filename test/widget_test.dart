@@ -1,4 +1,6 @@
 import 'package:dotline_duel/app/app.dart';
+import 'package:dotline_duel/game/controllers/game_controller.dart';
+import 'package:dotline_duel/game/controllers/player_agent.dart';
 import 'package:dotline_duel/game/models/game_config.dart';
 import 'package:dotline_duel/game/models/game_result.dart';
 import 'package:dotline_duel/game/models/game_state.dart';
@@ -6,9 +8,14 @@ import 'package:dotline_duel/game/screens/game_screen.dart';
 import 'package:dotline_duel/game/screens/result_screen.dart';
 import 'package:dotline_duel/game/screens/tutorial_screen.dart';
 import 'package:dotline_duel/game/services/settings_controller.dart';
+import 'package:dotline_duel/game/widgets/balloon_widget.dart';
+import 'package:dotline_duel/game/widgets/game_board.dart';
 import 'package:dotline_duel/game/widgets/scoreboard.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/scripted_agent.dart';
+import 'support/sim.dart' as sim;
 
 /// One frame to start animations/route transitions (a pushed route is
 /// offstage for its first frame), then let them run for [ms].
@@ -132,7 +139,6 @@ void main() {
             top: line('BOT', true, 1),
             outcome: const GameOutcome(0, WinReason.moreBalloonsDestroyed),
             trigger: GameEndTrigger.timer,
-            rounds: 4,
           ),
         ),
       ),
@@ -172,5 +178,36 @@ void main() {
     }
     expect(find.textContaining('phase playing'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('crossing the line puts reticles on the opponent balloons', (
+    tester,
+  ) async {
+    usePhoneSize(tester);
+    final controller = GameController(
+      config: const GameConfig(obstacleSeed: 1, obstacleDensity: 0),
+      bottomAgent: ScriptedAgent(waypoints: const [Offset(380, 150)]),
+      topAgent: IdleAgent(),
+    );
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GameBoard(controller: controller, onTransform: (_) {}),
+        ),
+      ),
+    );
+    List<BalloonWidget> botBalloons() => tester
+        .widgetList<BalloonWidget>(find.byType(BalloonWidget))
+        .where((b) => b.color == controller.top.identity.color)
+        .toList();
+
+    expect(botBalloons().where((b) => b.aimed), isEmpty);
+    sim.skipToPlaying(controller);
+    sim.runUntil(controller, () => controller.bottom.hasCrossed);
+    await tester.pump();
+    expect(botBalloons(), hasLength(3));
+    expect(botBalloons().every((b) => b.aimed), isTrue);
+    await tester.pump(const Duration(seconds: 1));
   });
 }

@@ -122,9 +122,29 @@ void main() {
     });
   });
 
-  group('successful crossing', () {
-    test('reaching the far side banks the run and halts the opponent', () {
-      final human = ScriptedAgent(waypoints: const [Offset(500, 150)]);
+  group('crossing and continuous play', () {
+    test('crossing alone banks nothing; the pen keeps going', () {
+      // Stops past the line but away from every balloon.
+      final human = ScriptedAgent(waypoints: const [Offset(380, 150)]);
+      final c = skipToPlaying(
+        GameController(
+          config: emptyBoard,
+          bottomAgent: human,
+          topAgent: IdleAgent(),
+        ),
+      );
+      runFor(c, 3);
+      expect(c.phase.value, GamePhase.playing, reason: 'no round break');
+      expect(c.bottom.hasCrossed, isTrue);
+      expect(c.bottom.runStatus, RunStatus.running);
+      expect(c.bottom.hud.value.hunting, isTrue);
+      expect(c.bottom.stats.bankedScore, 0);
+    });
+
+    test('the opponent is never interrupted by a crossing or a pop', () {
+      final human = ScriptedAgent(
+        waypoints: const [Offset(500, 150), Offset(750, 82)],
+      );
       final bot = ScriptedAgent(
         waypoints: const [Offset(500, 700)],
         maxSpeed: 100,
@@ -132,14 +152,10 @@ void main() {
       final c = skipToPlaying(
         GameController(config: emptyBoard, bottomAgent: human, topAgent: bot),
       );
-      runFor(c, 3);
-      expect(c.phase.value, isNot(GamePhase.playing));
-      final success = c.lastSuccess.value!;
-      expect(success.player, c.bottom);
-      expect(success.summary.penalties, 0);
-      expect(success.summary.runScore, success.summary.distancePoints);
-      expect(c.bottom.stats.bankedScore, success.summary.runScore);
-      expect(c.bottom.stats.successfulRuns, 1);
+      runFor(c, 4);
+      expect(c.bottom.stats.balloonsDestroyed, 1);
+      expect(c.top.runStatus, RunStatus.running);
+      expect(c.top.stats.totalDistance, 0, reason: 'its run is still open');
       expect(c.top.attemptsRemaining, emptyBoard.attemptsPerPlayer);
     });
 
@@ -151,6 +167,7 @@ void main() {
           Offset(800, 800),
           Offset(200, 500),
           Offset(500, 150),
+          Offset(500, 82),
         ],
       );
       final c = skipToPlaying(
@@ -160,14 +177,11 @@ void main() {
           topAgent: IdleAgent(),
         ),
       );
-      runFor(c, 6);
+      runUntil(c, () => c.bottom.stats.balloonsDestroyed == 1, maxSeconds: 8);
       final straight =
           (emptyBoard.bottomStart.dy - emptyBoard.bottomGoalY) *
           emptyBoard.distanceUnitsPerWorldUnit;
-      expect(
-        c.lastSuccess.value!.summary.distancePoints,
-        greaterThan(straight * 1.5),
-      );
+      expect(c.bottom.stats.totalDistance, greaterThan(straight * 1.5));
     });
   });
 }

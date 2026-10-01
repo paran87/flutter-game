@@ -48,14 +48,12 @@ class GameResult {
     required this.top,
     required this.outcome,
     required this.trigger,
-    required this.rounds,
   });
 
   final ResultLine bottom;
   final ResultLine top;
   final GameOutcome outcome;
   final GameEndTrigger trigger;
-  final int rounds;
 
   ResultLine? get winnerLine => switch (outcome.winner) {
     0 => bottom,

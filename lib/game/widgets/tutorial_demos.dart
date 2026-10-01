@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -318,54 +317,125 @@ class BalloonDemo extends StatefulWidget {
   State<BalloonDemo> createState() => _BalloonDemoState();
 }
 
-class _BalloonDemoState extends State<BalloonDemo> {
-  late final Timer _timer;
-  int _step = 0;
+/// The pen crosses the dashed line, keeps going, runs into the middle
+/// balloon and pops it. Loops.
+class _BalloonDemoState extends State<BalloonDemo>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 3600),
+  )..repeat();
 
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(
-      const Duration(milliseconds: 700),
-      (_) => setState(() => _step = (_step + 1) % 6),
-    );
-  }
+  static const _hitAt = 0.62;
 
   @override
   void dispose() {
-    _timer.cancel();
+    _c.dispose();
     super.dispose();
-  }
-
-  BalloonStatus _status(int index) {
-    if (index != 1) return BalloonStatus.intact;
-    return switch (_step) {
-      2 => BalloonStatus.targeted,
-      3 => BalloonStatus.popping,
-      4 || 5 => BalloonStatus.destroyed,
-      _ => BalloonStatus.intact,
-    };
   }
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          for (var i = 0; i < 3; i++)
-            BalloonWidget(
-              color: AppColors.p2,
-              status: _status(i),
-              width: 54,
-              index: i,
-              aimed: _step < 2 && i == _step % 3,
-              attackerColor: AppColors.p1,
-            ),
-        ],
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = constraints.biggest;
+        const balloonWidth = 46.0;
+        final balloonY = size.height * 0.24;
+        return AnimatedBuilder(
+          animation: _c,
+          builder: (context, _) {
+            final t = _c.value;
+            final crossed = t > 0.42;
+            final status = t < _hitAt
+                ? BalloonStatus.intact
+                : t < _hitAt + 0.22
+                ? BalloonStatus.popping
+                : BalloonStatus.destroyed;
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _HuntPainter(
+                      t / _hitAt,
+                      balloonY,
+                      popped: t >= _hitAt,
+                    ),
+                  ),
+                ),
+                for (var i = 0; i < 3; i++)
+                  Positioned(
+                    left: size.width * (0.2 + 0.3 * i) - balloonWidth / 2,
+                    top: balloonY - balloonWidth * 1.45 * 0.36,
+                    child: BalloonWidget(
+                      color: AppColors.p2,
+                      status: i == 1 ? status : BalloonStatus.intact,
+                      width: balloonWidth,
+                      index: i,
+                      aimed:
+                          crossed && (i != 1 || status == BalloonStatus.intact),
+                      attackerColor: AppColors.p1,
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
+}
+
+class _HuntPainter extends CustomPainter {
+  _HuntPainter(this.progress, this.balloonY, {required this.popped});
+
+  final double progress;
+  final double balloonY;
+  final bool popped;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final lineY = size.height * 0.5;
+    final dash = Paint()
+      ..color = AppColors.p1.withValues(alpha: 0.6)
+      ..strokeWidth = 2;
+    for (var x = 12.0; x < size.width - 12; x += 14) {
+      canvas.drawLine(Offset(x, lineY), Offset(x + 8, lineY), dash);
+    }
+    _paintDots(
+      canvas,
+      size,
+      21,
+      count: 18,
+      avoid: Rect.fromLTWH(0, 0, size.width, lineY + 6),
+    );
+    final route = Path()
+      ..moveTo(size.width * 0.35, size.height * 0.98)
+      ..cubicTo(
+        size.width * 0.15,
+        size.height * 0.75,
+        size.width * 0.7,
+        size.height * 0.6,
+        size.width * 0.5,
+        balloonY,
+      );
+    final p = progress.clamp(0.0, 1.0);
+    _paintInk(canvas, route, p, AppColors.p1);
+    if (!popped) {
+      PlayerMarkerPainter.paint(canvas, _pointAt(route, p), 5, AppColors.p1);
+    } else {
+      _label(
+        canvas,
+        '+790',
+        Offset(size.width * 0.5, balloonY - 34),
+        AppColors.p1,
+        size: 16,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_HuntPainter old) =>
+      old.progress != progress || old.popped != popped;
 }
 
 // 5. How to win ----------------------------------------------------------

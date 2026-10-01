@@ -112,9 +112,11 @@ class GameBoardPainter extends CustomPainter {
       case RunStatus.eliminated:
         opacity = 0.45;
         dim = true;
+      case RunStatus.finished:
+        // Just popped a balloon: the pen vanishes until it respawns.
+        opacity = 0;
       case RunStatus.ready:
       case RunStatus.running:
-      case RunStatus.finished:
       case RunStatus.halted:
         break;
     }
@@ -151,13 +153,10 @@ class GameBoardPainter extends CustomPainter {
         ? (controller.time * 1.2) % 1.0
         : 0.0;
 
-    // Name chips only while racing; they would clutter the attack screens.
-    final phase = controller.phase.value;
+    // Name chips while the match is on; hidden on the final splash.
     final showLabel =
-        phase == GamePhase.intro ||
-        phase == GamePhase.nextRound ||
-        phase == GamePhase.countdown ||
-        phase == GamePhase.playing;
+        controller.phase.value != GamePhase.gameOver &&
+        player.runStatus != RunStatus.finished;
 
     PlayerMarkerPainter.paint(
       canvas,

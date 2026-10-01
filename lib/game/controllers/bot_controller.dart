@@ -20,7 +20,9 @@ import 'player_agent.dart';
 ///     cells near dots are expensive (weighted by dot size and by the
 ///     difficulty's `obstacleAvoidance`), plus random noise for sloppier
 ///     bots.
-///  2. Grid A* finds a cheap route from its start to the goal line.
+///  2. It picks one of your living balloons — Easy at random, Normal/Hard
+///     whichever is cheapest to reach — and grid A* finds a route from its
+///     start, through the dots and over your line, right into that balloon.
 ///  3. The route is smoothed (Chaikin) and resampled.
 ///  4. Each frame it chases a "carrot" a little ahead on that route, with a
 ///     sideways hand wobble, after a short human-like reaction delay.
@@ -96,27 +98,10 @@ class BotController extends PlayerAgent {
     return AgentIntent(target: target, penDown: true);
   }
 
-  int? _aim;
-
-  @override
-  int? get aimHint => _aim;
-
-  @override
-  int? chooseBalloon(List<int> available, double elapsed) {
-    if (available.isEmpty) return null;
-    // A short "aiming" pause, sweeping across the targets, makes the choice
-    // feel deliberate rather than instantaneous.
-    if (elapsed < profile.targetDelay) {
-      _aim = available[(elapsed / 0.28).floor() % available.length];
-      return null;
-    }
-    return _aim = available[_rng.nextInt(available.length)];
-  }
-
-  @override
-  void reset() => _aim = null;
-
   // ---------------------------------------------------------- Pathfinding
+
+  /// Index of the balloon the current run is aiming for (debug/tests).
+  int? targetBalloon;
 
   List<Offset> _planPath(AgentContext context) {
     final config = context.config;
@@ -128,18 +113,43 @@ class BotController extends PlayerAgent {
       rng: _rng,
     );
     final start = context.self.startPosition;
-    final goingDown = context.self.isTop;
-    // Aim a little past the goal line so the bot commits to crossing it.
-    final goalY = goingDown ? context.goalY + 25 : context.goalY - 25;
+    final targets = context.opponent.aliveBalloonIndexes;
+    if (targets.isEmpty) return const [];
 
-    final cells = grid.aStar(start, goalY: goalY, goingDown: goingDown);
-    if (cells.isEmpty) {
-      // Should not happen on an open board, but never leave the bot stuck.
-      return [start, Offset(start.dx, goalY)];
+    // Easy bots go for any balloon; better bots take the cheapest route.
+    final candidates = difficulty == BotDifficulty.easy
+        ? [targets[_rng.nextInt(targets.length)]]
+        : targets;
+    _Route? best;
+    for (final index in candidates) {
+      final route = grid.aStar(start, context.opponentBalloon(index));
+      if (route != null && (best == null || route.cost < best.cost)) {
+        best = route..balloon = index;
+      }
     }
-    final raw = [start, ...cells.skip(1), Offset(cells.last.dx, goalY)];
+
+    if (best == null) {
+      // Should not happen on an open board, but never leave the bot stuck.
+      targetBalloon = targets.first;
+      return [start, context.opponentBalloon(targets.first)];
+    }
+    targetBalloon = best.balloon;
+    final goal = context.opponentBalloon(best.balloon);
+    final cells = best.cells;
+    final middle = cells.length > 2
+        ? cells.sublist(1, cells.length - 1)
+        : <Offset>[];
+    final raw = [start, ...middle, goal];
     return resample(chaikinSmooth(raw, iterations: 3), 8);
   }
+}
+
+class _Route {
+  _Route(this.cells, this.cost);
+
+  final List<Offset> cells;
+  final double cost;
+  int balloon = 0;
 }
 
 /// Coarse cost map + A* used by the bot.
@@ -193,8 +203,14 @@ class _CostGrid {
     }
 
     final cost = Float64List(cols * rows);
+    final minX = config.fieldRect.left + config.playerRadius;
+    final maxX = config.fieldRect.right - config.playerRadius;
     for (var i = 0; i < cost.length; i++) {
-      cost[i] = 1 + avoidance * danger[i] + noise * rng.nextDouble();
+      final x = (i % cols + 0.5) * cell;
+      // Pens are clamped to the field's width, so cells outside it are walls.
+      cost[i] = x < minX || x > maxX
+          ? double.infinity
+          : 1 + avoidance * danger[i] + noise * rng.nextDouble();
     }
     return _CostGrid(cell, cols, rows, cost);
   }
@@ -208,27 +224,18 @@ class _CostGrid {
     return r * cols + c;
   }
 
-  /// A* from [start] to any cell beyond [goalY] (8-connected).
-  List<Offset> aStar(
-    Offset start, {
-    required double goalY,
-    required bool goingDown,
-  }) {
+  /// A* from [start] to the cell containing [goal] (8-connected).
+  _Route? aStar(Offset start, Offset goal) {
     final startIndex = _indexOf(start);
+    final goalIndex = _indexOf(goal);
     final g = Float64List(cols * rows)
       ..fillRange(0, cols * rows, double.infinity);
     final cameFrom = Int32List(cols * rows)..fillRange(0, cols * rows, -1);
     final closed = Uint8List(cols * rows);
     g[startIndex] = 0;
 
-    bool isGoal(int i) {
-      final y = _center(i).dy;
-      return goingDown ? y >= goalY : y <= goalY;
-    }
-
-    // Admissible heuristic: remaining vertical distance at minimum cost 1.
-    double h(int i) =>
-        math.max(0, goingDown ? goalY - _center(i).dy : _center(i).dy - goalY);
+    // Admissible heuristic: straight-line distance at the minimum cost of 1.
+    double h(int i) => (_center(i) - goal).distance;
 
     final open = _MinHeap()..push(startIndex, h(startIndex));
     const dirs = [
@@ -246,7 +253,9 @@ class _CostGrid {
       final current = open.pop();
       if (closed[current] == 1) continue;
       closed[current] = 1;
-      if (isGoal(current)) return _reconstruct(cameFrom, current);
+      if (current == goalIndex) {
+        return _Route(_reconstruct(cameFrom, current), g[current]);
+      }
 
       final cc = current % cols;
       final cr = current ~/ cols;
@@ -255,7 +264,7 @@ class _CostGrid {
         final nr = cr + dr;
         if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
         final next = nr * cols + nc;
-        if (closed[next] == 1) continue;
+        if (closed[next] == 1 || cost[next].isInfinite) continue;
         final stepLength = (dc != 0 && dr != 0 ? math.sqrt2 : 1.0) * cell;
         final tentative =
             g[current] + stepLength * (cost[current] + cost[next]) / 2;
@@ -266,7 +275,7 @@ class _CostGrid {
         }
       }
     }
-    return const [];
+    return null;
   }
 
   List<Offset> _reconstruct(Int32List cameFrom, int end) {

@@ -13,16 +13,9 @@ import 'ink_meter.dart';
 /// the available width: below [_compactWidth] the name is dropped and
 /// numbers scale down rather than overflow.
 class PlayerScoreCard extends StatelessWidget {
-  const PlayerScoreCard({
-    super.key,
-    required this.player,
-    this.highlight = false,
-  });
+  const PlayerScoreCard({super.key, required this.player});
 
   final Player player;
-
-  /// Emphasise the card (e.g. this player is attacking).
-  final bool highlight;
 
   static const _compactWidth = 150.0;
 
@@ -35,6 +28,8 @@ class PlayerScoreCard extends StatelessWidget {
       valueListenable: player.hud,
       builder: (context, hud, _) {
         final out = hud.attempts == 0;
+        // Light up while this player has crossed and is hunting a balloon.
+        final highlight = hud.hunting;
         return AnimatedOpacity(
           duration: const Duration(milliseconds: 300),
           opacity: out ? 0.55 : 1,

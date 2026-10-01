@@ -31,8 +31,15 @@ class AgentContext {
   final Player self;
   final Player opponent;
 
-  /// The y coordinate this agent must reach to succeed.
+  /// The y coordinate this agent must cross before it can pop a balloon.
   double get goalY => self.isTop ? config.topGoalY : config.bottomGoalY;
+
+  /// World position of one of the opponent's balloons.
+  Offset opponentBalloon(int index) => config.balloonCenter(
+    topOwner: opponent.isTop,
+    index: index,
+    count: opponent.balloons.length,
+  );
 }
 
 /// Anything that can control a player: the local human, the bot, or —
@@ -51,16 +58,8 @@ abstract class PlayerAgent {
   /// Called every frame while the player may move.
   AgentIntent update(double dt, AgentContext context);
 
-  /// Called every frame during this player's targeting phase. Return the
-  /// chosen balloon index once decided, or null to keep thinking.
-  int? chooseBalloon(List<int> available, double elapsed);
-
   /// A planned route to visualise in debug mode (empty if none).
   List<Offset> get debugPath => const [];
-
-  /// Which balloon the agent is currently eyeing while choosing, if any
-  /// (purely presentational; lets the opponent see the aim sweep).
-  int? get aimHint => null;
 
   /// Clears transient input (e.g. a held finger) between phases.
   void reset() {}
@@ -82,15 +81,22 @@ class TouchPlayerAgent extends PlayerAgent {
   int? _pointer;
   Offset? _target;
   Offset? _finger;
-  int? _pendingBalloon;
+
+  /// After a respawn the finger is usually far from the start pad (e.g. up
+  /// by the balloons). Its input is ignored until it is lifted and placed
+  /// again, so the pen never streaks across the board on its own.
+  bool _awaitingRelease = false;
 
   bool get isTouching => _pointer != null;
 
+  /// True while the player must lift their finger before drawing again.
+  bool get awaitingRelease => _awaitingRelease;
+
   /// Where the finger actually is (world coordinates), for the tether hint.
-  Offset? get finger => _finger;
+  Offset? get finger => _awaitingRelease ? null : _finger;
 
   /// Where the finger wants the pen to be (finger + offset).
-  Offset? get target => _target;
+  Offset? get target => _awaitingRelease ? null : _target;
 
   void pointerDown(int pointer, Offset worldTarget, Offset worldFinger) {
     // Only the first finger draws; extra fingers are ignored.
@@ -111,29 +117,18 @@ class TouchPlayerAgent extends PlayerAgent {
     _pointer = null;
     _target = null;
     _finger = null;
-  }
-
-  /// Called by the targeting UI when the player taps a balloon.
-  void selectBalloon(int index) => _pendingBalloon = index;
-
-  @override
-  AgentIntent update(double dt, AgentContext context) =>
-      AgentIntent(target: _target, penDown: _pointer != null);
-
-  @override
-  int? chooseBalloon(List<int> available, double elapsed) {
-    final choice = _pendingBalloon;
-    if (choice != null && available.contains(choice)) {
-      _pendingBalloon = null;
-      return choice;
-    }
-    return null;
+    _awaitingRelease = false;
   }
 
   @override
-  void reset() {
-    _pendingBalloon = null;
+  void onRunStart(AgentContext context) {
+    if (_pointer != null) _awaitingRelease = true;
   }
+
+  @override
+  AgentIntent update(double dt, AgentContext context) => _awaitingRelease
+      ? AgentIntent.idle
+      : AgentIntent(target: _target, penDown: _pointer != null);
 }
 
 /// An agent that never moves. Useful as a placeholder and in tests.
@@ -145,8 +140,4 @@ class IdleAgent extends PlayerAgent {
 
   @override
   AgentIntent update(double dt, AgentContext context) => AgentIntent.idle;
-
-  @override
-  int? chooseBalloon(List<int> available, double elapsed) =>
-      available.isEmpty ? null : available.first;
 }

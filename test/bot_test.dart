@@ -9,8 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/sim.dart';
 
-/// Crossing stats for one bot run on a given seed.
-({double seconds, int penalties, double inkUsed, double pathRatio}) crossOnce(
+/// Stats for one bot run (start → through the dots → into a balloon).
+({double seconds, int penalties, double inkUsed}) crossOnce(
   BotDifficulty difficulty,
   int seed,
 ) {
@@ -20,18 +20,18 @@ import 'support/sim.dart';
     GameController(config: config, bottomAgent: IdleAgent(), topAgent: bot),
   );
   final start = c.time;
-  runUntil(c, () => c.phase.value != GamePhase.playing, maxSeconds: 20);
-  final success = c.lastSuccess.value;
-  expect(success, isNotNull, reason: '$difficulty bot must cross (seed $seed)');
-  expect(success!.player, c.top);
-  final straight = config.topGoalY - config.topStart.dy;
+  runUntil(c, () => c.top.stats.balloonsDestroyed == 1, maxSeconds: 20);
+  expect(
+    c.top.stats.balloonsDestroyed,
+    1,
+    reason: '$difficulty bot must pop a balloon (seed $seed)',
+  );
   final distanceWorld =
-      success.summary.distancePoints / config.distanceUnitsPerWorldUnit;
+      c.top.stats.totalDistance / config.distanceUnitsPerWorldUnit;
   return (
     seconds: c.time - start,
-    penalties: success.summary.penalties,
+    penalties: c.top.stats.totalPenalties,
     inkUsed: distanceWorld / config.inkCapacity,
-    pathRatio: distanceWorld / straight,
   );
 }
 
@@ -103,12 +103,22 @@ void main() {
     expect(normal['penalties']!, greaterThanOrEqualTo(hard['penalties']!));
   });
 
-  test('bot picks an available balloon after a short aiming delay', () {
-    final bot = BotController(difficulty: BotDifficulty.normal, seed: 1);
-    final delay = bot.profile.targetDelay;
-    expect(bot.chooseBalloon([0, 2], delay * 0.5), isNull);
-    expect([0, 2], contains(bot.chooseBalloon([0, 2], delay + 0.01)));
-    expect(bot.chooseBalloon([], 99), isNull);
+  test('bot aims each run at a balloon that is still standing', () {
+    const config = GameConfig(obstacleSeed: 6);
+    final bot = BotController(difficulty: BotDifficulty.hard, seed: 6);
+    final c = skipToPlaying(
+      GameController(config: config, bottomAgent: IdleAgent(), topAgent: bot),
+    );
+    final popped = <int>{};
+    for (var i = 0; i < 2; i++) {
+      final target = bot.targetBalloon!;
+      expect(c.bottom.balloons[target].isAlive, isTrue);
+      expect(popped, isNot(contains(target)));
+      runUntil(c, () => c.top.stats.balloonsDestroyed == i + 1);
+      popped.add(target);
+      expect(c.bottom.balloons[target].isAlive, isFalse);
+      runUntil(c, () => c.top.runStatus == RunStatus.ready);
+    }
   });
 
   test('bot vs bot: a full game always resolves', () {

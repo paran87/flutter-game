@@ -58,7 +58,7 @@ class _DebugPanelState extends State<DebugPanel> {
         '  run dist ${p.run.distance.toStringAsFixed(1)}  total ${(p.stats.totalDistance + p.run.distance).toStringAsFixed(1)}\n'
         '  score ${c.scoring.liveScore(p)}  run pen ${p.run.penalties}  total pen ${p.stats.totalPenalties}\n'
         '  touching ${collisions.isTouching ? collisions.touching.length : 0}  last -${_lastPenalty[p] ?? 0}  ink ${(c.inkFraction(p) * 100).round()}%\n'
-        '  attempts ${p.attemptsRemaining}  balloons ${p.balloonsStanding}  popped ${p.stats.balloonsDestroyed}\n'
+        '  attempts ${p.attemptsRemaining}  balloons ${p.balloonsStanding}  popped ${p.stats.balloonsDestroyed}  hunting ${p.hasCrossed}\n'
         '  trace pts ${p.trace.points.length}  plan pts ${c.agentFor(p).debugPath.length}';
   }
 
@@ -73,7 +73,7 @@ class _DebugPanelState extends State<DebugPanel> {
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
-          'phase ${c.phase.value.name}  round ${c.round.value}  '
+          'phase ${c.phase.value.name}  '
           'timer ${c.timer.remaining.toStringAsFixed(1)}s  sim ${_fps.toStringAsFixed(0)} fps\n'
           'seed ${c.field.value.seed}  dots ${c.field.value.dots.length}\n'
           '${_player(c.bottom)}\n${_player(c.top)}',

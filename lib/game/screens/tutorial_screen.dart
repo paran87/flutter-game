@@ -42,7 +42,7 @@ final _pages = <_Page>[
   _Page(
     'Reach the other side',
     const [
-      "Cross the dashed line on your opponent's side to complete a run.",
+      "Cross the dashed line on your opponent's side to start hunting.",
       'Longer routes score more distance, but your pen only has so much ink.',
       'Run dry, or lift your finger for too long, and you lose one of 3 attempts.',
     ],

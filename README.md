@@ -17,7 +17,7 @@ Built with Flutter 3.47 / Dart 3.13 and no third-party runtime packages:
 flutter pub get
 flutter run                      # Android / iOS device or emulator
 flutter run -d chrome            # quick look in a browser
-flutter test                     # 72 unit + widget tests
+flutter test                     # 78 unit + widget tests
 ```
 
 Dev flag for a quick end-of-game check:
@@ -25,23 +25,27 @@ Dev flag for a quick end-of-game check:
 
 ## How a match plays
 
+A match is one continuous race on a single dot field. There are no rounds.
+
 1. **Draw.** Put your finger down below your pen and drag. The pen sits
    above your finger (configurable offset) and eases toward it with a speed
    cap, so it never hides under your thumb or snaps around.
 2. **Dots cost points, never stop you.** Touching a dot costs 5/10/20 points
    by size, flashes it, shakes the pen and briefly slows it. A dot charges
    once per contact, and touching the same dot again within 300 ms is free.
-3. **Score = distance − penalties.** Distance is the length of the path you
-   actually drew, so winding routes count. The run score is banked only
-   when you reach the opponent's dashed line.
-4. **Ink and attempts.** Each run has limited ink. Running dry, or lifting
+3. **Cross, then hunt.** Once your pen crosses the dashed line on the
+   opponent's side, keep drawing and steer it *into* one of their
+   balloons. Touching a balloon pops it. One balloon per run.
+4. **Score = distance − penalties.** Distance is the length of the path you
+   actually drew, so winding routes count. A run's score is banked only when
+   it pops a balloon. Your pen then respawns at your start (lift your finger
+   and draw again), and the opponent is never interrupted.
+5. **Ink and attempts.** Each run has limited ink. Running dry, or lifting
    your finger for more than 1.5 s mid-run, fails the run and costs one of
    your 3 attempts. Touching dots never costs an attempt.
-5. **Attack.** The first player across each round taps (or the bot picks)
-   one opponent balloon to pop. Then both players reset on a fresh dot field.
-6. **Win.** Pop all three balloons. If the 2-minute clock runs out first
-   (it only runs while players are racing), the winner is decided by
-   balloons destroyed, then total score, then total distance, else a draw.
+6. **Win.** Pop all three opponent balloons. If the 2-minute clock runs out
+   first, the winner is decided by balloons destroyed, then total score, then
+   total distance, else a draw. Final totals appear on the result screen.
 
 ## Project layout
 
@@ -54,9 +58,9 @@ lib/
                                  ObstacleDot/Field, Balloon, InkTrace, stats,
                                  phases, results, effects
     controllers/
-      game_controller.dart       the state machine (phases, rounds, rules)
+      game_controller.dart       the state machine (phases, run lifecycle, rules)
       player_agent.dart          PlayerAgent interface + touch agent
-      bot_controller.dart        the AI (cost grid + A* + smoothing)
+      bot_controller.dart        the AI (cost grid + A* into a balloon + smoothing)
       movement_controller.dart   easing, speed caps, play-area clamp
       collision_controller.dart  swept collision, enter-only + cooldown
       scoring_controller.dart    penalties, run/live/banked score
@@ -79,7 +83,7 @@ docs/IMPLEMENTATION_PLAN.md      design notes and phase plan
   to fit the screen, so scoring and difficulty are identical on every phone.
   The HUD adapts separately: compact cards and timer below 370 dp.
 * **Agents only express intent.** `PlayerAgent.update()` returns a target
-  point and pen state, and `chooseBalloon()` picks a target. The controller
+  point and pen state; balloons are popped by steering into them. The controller
   applies the same movement, collision and scoring to everyone. The human is
   `TouchPlayerAgent` and the bot is `BotController`. **A networked opponent
   is just another `PlayerAgent`** that feeds remote input; nothing else
@@ -103,7 +107,7 @@ profiles. Player-facing options (difficulty, match length, pen offset, the
 pen-lift rule, haptics, sound, debug overlay) are on the Settings screen.
 
 The bot difficulties were tuned against seeded simulations (see
-`test/bot_test.dart`): harder bots cross faster and touch fewer dots.
+`test/bot_test.dart`): harder bots reach a balloon faster and touch fewer dots.
 
 ## Debug mode
 

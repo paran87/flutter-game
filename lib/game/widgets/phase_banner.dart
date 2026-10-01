@@ -4,7 +4,7 @@ import '../../app/theme.dart';
 import '../controllers/game_controller.dart';
 import '../models/game_state.dart';
 
-/// "ROUND 2", "3 · 2 · 1", "GO!", and the end-of-game splash.
+/// "READY?", "3 · 2 · 1", "GO!", and the end-of-game splash.
 ///
 /// Listens to the frame signal but only rebuilds when the label changes.
 class PhaseBanner extends StatefulWidget {
@@ -42,18 +42,15 @@ class _PhaseBannerState extends State<PhaseBanner> {
   _Label? _compute() {
     switch (c.phase.value) {
       case GamePhase.intro:
-      case GamePhase.nextRound:
-        return _Label(
-          'ROUND ${c.round.value}',
+        return const _Label(
+          'READY?',
           AppColors.ink,
-          sub: c.round.value == 1
-              ? 'Draw your way through.'
-              : 'Fresh page, new dots',
+          sub: 'Cross the dots, then pop a balloon',
         );
       case GamePhase.countdown:
         return _Label('${c.countdownValue}', AppColors.ink, big: true);
       case GamePhase.playing:
-        // Flash GO! for the first half second of a round.
+        // Flash GO! for the first half second of the match.
         return c.phaseTime < 0.55
             ? const _Label('GO!', AppColors.success, big: true)
             : null;
@@ -71,10 +68,6 @@ class _PhaseBannerState extends State<PhaseBanner> {
         return winner.isBot
             ? _Label('DEFEAT', AppColors.inkSoft, sub: result.trigger.headline)
             : _Label('VICTORY!', winner.color, sub: result.trigger.headline);
-      case GamePhase.playerSuccess:
-      case GamePhase.targeting:
-      case GamePhase.balloonDestroyed:
-        return null;
     }
   }
 

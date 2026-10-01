@@ -19,7 +19,6 @@ class BotProfile {
     required this.pathNoise,
     required this.wobbleAmplitude,
     required this.wobbleFrequency,
-    required this.targetDelay,
     required this.reactionDelay,
   });
 
@@ -37,9 +36,6 @@ class BotProfile {
 
   /// Wobble oscillations per second.
   final double wobbleFrequency;
-
-  /// Seconds the bot "thinks" before picking a balloon to attack.
-  final double targetDelay;
 
   /// Seconds the bot waits after GO before it starts drawing.
   final double reactionDelay;
@@ -69,6 +65,7 @@ class GameConfig {
     this.topBalloonY = 82,
     this.bottomBalloonY = 1518,
     this.balloonSpacing = 250,
+    this.balloonHitRadius = 40,
     // Movement
     this.touchOffset = 76,
     this.movementSmoothing = 14,
@@ -113,11 +110,8 @@ class GameConfig {
     this.introDuration = const Duration(milliseconds: 1300),
     this.countdownStep = const Duration(milliseconds: 650),
     this.countdownSteps = 3,
-    this.successSummaryDuration = const Duration(milliseconds: 1900),
-    this.targetingDuration = const Duration(seconds: 8),
     this.balloonAnimationDuration = const Duration(milliseconds: 800),
-    this.postPopPause = const Duration(milliseconds: 500),
-    this.nextRoundDuration = const Duration(milliseconds: 1200),
+    this.respawnDelay = const Duration(milliseconds: 700),
     this.failureResetDuration = const Duration(milliseconds: 1000),
     this.gameOverDelay = const Duration(milliseconds: 1600),
     // Bot
@@ -147,15 +141,19 @@ class GameConfig {
   /// Where the bottom player (Player 1) starts each run.
   final Offset bottomStart;
 
-  /// The top player succeeds when it reaches y >= [topGoalY].
+  /// The top player has crossed once it reaches y >= [topGoalY]; past this
+  /// line it can hunt the opponent's balloons.
   final double topGoalY;
 
-  /// The bottom player succeeds when it reaches y <= [bottomGoalY].
+  /// The bottom player has crossed once it reaches y <= [bottomGoalY].
   final double bottomGoalY;
 
   final double topBalloonY;
   final double bottomBalloonY;
   final double balloonSpacing;
+
+  /// Radius of a balloon's body (world units). A pen touching it pops it.
+  final double balloonHitRadius;
 
   // ------------------------------------------------------------- Movement
   /// Distance (logical pixels) the marker sits above the finger.
@@ -247,11 +245,10 @@ class GameConfig {
   final Duration introDuration;
   final Duration countdownStep;
   final int countdownSteps;
-  final Duration successSummaryDuration;
-  final Duration targetingDuration;
   final Duration balloonAnimationDuration;
-  final Duration postPopPause;
-  final Duration nextRoundDuration;
+
+  /// Pause after popping a balloon before the pen reappears at its start.
+  final Duration respawnDelay;
   final Duration failureResetDuration;
   final Duration gameOverDelay;
 
@@ -271,7 +268,6 @@ class GameConfig {
           pathNoise: 2.2,
           wobbleAmplitude: 15,
           wobbleFrequency: 0.9,
-          targetDelay: 1.4,
           reactionDelay: 0.7,
         ),
         BotDifficulty.normal => const BotProfile(
@@ -280,7 +276,6 @@ class GameConfig {
           pathNoise: 0.8,
           wobbleAmplitude: 8,
           wobbleFrequency: 0.7,
-          targetDelay: 1.0,
           reactionDelay: 0.45,
         ),
         BotDifficulty.hard => const BotProfile(
@@ -289,13 +284,21 @@ class GameConfig {
           pathNoise: 0.15,
           wobbleAmplitude: 3,
           wobbleFrequency: 0.5,
-          targetDelay: 0.7,
           reactionDelay: 0.25,
         ),
       };
 
   /// Total ink in displayed distance units.
   double get inkCapacityDistance => inkCapacity * distanceUnitsPerWorldUnit;
+
+  /// World-space centre of a balloon's body. The board widgets are placed
+  /// from this too, so what you see is exactly what you can hit.
+  Offset balloonCenter({
+    required bool topOwner,
+    required int index,
+    required int count,
+  }) =>
+      Offset(balloonXs(count)[index], topOwner ? topBalloonY : bottomBalloonY);
 
   /// Horizontal positions of the three balloon slots.
   List<double> balloonXs(int count) {
@@ -329,6 +332,7 @@ class GameConfig {
       topBalloonY: topBalloonY,
       bottomBalloonY: bottomBalloonY,
       balloonSpacing: balloonSpacing,
+      balloonHitRadius: balloonHitRadius,
       touchOffset: touchOffset ?? this.touchOffset,
       movementSmoothing: movementSmoothing,
       playerSpeed: playerSpeed,
@@ -366,11 +370,8 @@ class GameConfig {
       introDuration: introDuration,
       countdownStep: countdownStep,
       countdownSteps: countdownSteps,
-      successSummaryDuration: successSummaryDuration,
-      targetingDuration: targetingDuration,
       balloonAnimationDuration: balloonAnimationDuration,
-      postPopPause: postPopPause,
-      nextRoundDuration: nextRoundDuration,
+      respawnDelay: respawnDelay,
       failureResetDuration: failureResetDuration,
       gameOverDelay: gameOverDelay,
       botDifficulty: botDifficulty ?? this.botDifficulty,

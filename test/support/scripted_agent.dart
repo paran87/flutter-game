@@ -12,7 +12,6 @@ class ScriptedAgent extends PlayerAgent {
   final double maxSpeed;
   List<Offset> waypoints;
   bool penDown = true;
-  int? balloonChoice;
   int _index = 0;
   int runsStarted = 0;
 
@@ -32,12 +31,5 @@ class ScriptedAgent extends PlayerAgent {
       _index++;
     }
     return AgentIntent(target: waypoints[_index], penDown: true);
-  }
-
-  @override
-  int? chooseBalloon(List<int> available, double elapsed) {
-    final choice = balloonChoice;
-    if (choice != null && available.contains(choice)) return choice;
-    return available.isEmpty ? null : available.first;
   }
 }

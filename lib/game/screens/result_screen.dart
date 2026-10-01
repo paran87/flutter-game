@@ -116,7 +116,9 @@ class _ResultScreenState extends State<ResultScreen>
                           ],
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.xl),
+                      const SizedBox(height: AppSpacing.lg),
+                      _FinalScores(result: r, animation: _at(0.2, 0.75)),
+                      const SizedBox(height: AppSpacing.lg),
                       SlideTransition(
                         position: Tween(
                           begin: const Offset(0, 0.15),
@@ -222,6 +224,62 @@ class _Title extends StatelessWidget {
   }
 }
 
+/// The headline numbers: each player's total score, counted up.
+class _FinalScores extends StatelessWidget {
+  const _FinalScores({required this.result, required this.animation});
+
+  final GameResult result;
+  final Animation<double> animation;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget side(ResultLine line, bool winner) => Expanded(
+      child: Column(
+        children: [
+          Text(
+            line.name,
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.5,
+              color: line.color,
+            ),
+          ),
+          AnimatedBuilder(
+            animation: animation,
+            builder: (context, _) => FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                formatThousands((line.score * animation.value).round()),
+                style: TextStyle(
+                  fontSize: 40,
+                  fontWeight: FontWeight.w900,
+                  height: 1.1,
+                  color: winner ? line.color : AppColors.inkSoft,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ),
+          Text('TOTAL SCORE', style: Theme.of(context).textTheme.labelSmall),
+        ],
+      ),
+    );
+
+    final winner = result.outcome.winner;
+    return Row(
+      children: [
+        side(result.bottom, winner == 0),
+        Text(
+          'vs',
+          style: Theme.of(context).textTheme.titleMedium
+              ?.copyWith(color: AppColors.inkFaint),
+        ),
+        side(result.top, winner == 1),
+      ],
+    );
+  }
+}
+
 class _ComparisonTable extends StatelessWidget {
   const _ComparisonTable({required this.result});
 
@@ -253,7 +311,6 @@ class _ComparisonTable extends StatelessWidget {
         b.distance,
         decisive: reason == WinReason.longerDistance,
       ),
-      _Row('Crossings', a.successfulRuns, b.successfulRuns),
       _Row('Obstacle penalties', a.penalties, b.penalties, lowerIsBetter: true),
       _Row('Failed runs', a.failedRuns, b.failedRuns, lowerIsBetter: true),
     ];
@@ -281,10 +338,6 @@ class _ComparisonTable extends StatelessWidget {
           const SizedBox(height: 6),
           for (final row in rows) _RowView(row: row, a: a, b: b),
           const SizedBox(height: 4),
-          Text(
-            '${result.rounds} round${result.rounds == 1 ? '' : 's'} played',
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
         ],
       ),
     );

@@ -13,10 +13,8 @@ class BalloonWidget extends StatefulWidget {
     required this.status,
     required this.width,
     this.index = 0,
-    this.targetable = false,
     this.aimed = false,
     this.attackerColor,
-    this.onTap,
     this.popDuration = const Duration(milliseconds: 800),
   });
 
@@ -25,13 +23,9 @@ class BalloonWidget extends StatefulWidget {
   final double width;
   final int index;
 
-  /// Shows a pulsing crosshair and accepts taps.
-  final bool targetable;
-
-  /// Shows the reticle without accepting taps (opponent is aiming here).
+  /// Shows a pulsing reticle: the opponent can pop this balloon right now.
   final bool aimed;
   final Color? attackerColor;
-  final VoidCallback? onTap;
   final Duration popDuration;
 
   double get height => width * 1.45;
@@ -61,16 +55,15 @@ class _BalloonWidgetState extends State<BalloonWidget>
   void initState() {
     super.initState();
     _syncStatus(null);
-    if (widget.targetable || widget.aimed) _target.repeat();
+    if (widget.aimed) _target.repeat();
   }
 
   @override
   void didUpdateWidget(BalloonWidget old) {
     super.didUpdateWidget(old);
     if (old.status != widget.status) _syncStatus(old.status);
-    final reticle = widget.targetable || widget.aimed;
-    if ((old.targetable || old.aimed) != reticle) {
-      reticle ? _target.repeat() : _target.stop();
+    if (old.aimed != widget.aimed) {
+      widget.aimed ? _target.repeat() : _target.stop();
     }
   }
 
@@ -128,7 +121,7 @@ class _BalloonWidgetState extends State<BalloonWidget>
       },
     );
 
-    if (widget.targetable || widget.aimed || isTargeted) {
+    if (widget.aimed || isTargeted) {
       balloon = Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.center,
@@ -153,18 +146,13 @@ class _BalloonWidgetState extends State<BalloonWidget>
     }
 
     return Semantics(
-      button: widget.targetable,
       label: destroyed ? 'Destroyed balloon' : 'Balloon ${widget.index + 1}',
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.targetable ? widget.onTap : null,
-        child: SizedBox.fromSize(size: size, child: balloon),
-      ),
+      child: SizedBox.fromSize(size: size, child: balloon),
     );
   }
 }
 
-/// Rotating dashed reticle drawn around a targetable balloon.
+/// Rotating dashed reticle drawn around a balloon that is in danger.
 class _CrosshairPainter extends CustomPainter {
   _CrosshairPainter({
     required this.color,

@@ -8,7 +8,6 @@ import '../controllers/game_controller.dart';
 import '../controllers/player_agent.dart';
 import '../models/game_config.dart';
 import '../models/game_state.dart';
-import '../models/player.dart';
 import '../rendering/board_transform.dart';
 import '../rendering/paper_painter.dart';
 import '../services/audio_service.dart';
@@ -236,15 +235,7 @@ class _TopBar extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: ListenableBuilder(
-              listenable: controller.phase,
-              builder: (context, _) => PlayerScoreCard(
-                player: controller.top,
-                highlight: _attacking(controller.top),
-              ),
-            ),
-          ),
+          Expanded(child: PlayerScoreCard(player: controller.top)),
           const SizedBox(width: 6),
           Column(
             children: [
@@ -262,53 +253,20 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 2),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ValueListenableBuilder<int>(
-                    valueListenable: controller.round,
-                    builder: (context, round, _) => Text(
-                      'ROUND $round',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.5,
-                        color: AppColors.inkFaint,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: onPause,
-                    tooltip: 'Pause',
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 20,
-                    color: AppColors.inkSoft,
-                    icon: const Icon(Icons.pause_circle_outline_rounded),
-                  ),
-                ],
+              IconButton(
+                onPressed: onPause,
+                tooltip: 'Pause',
+                visualDensity: VisualDensity.compact,
+                iconSize: 22,
+                color: AppColors.inkSoft,
+                icon: const Icon(Icons.pause_circle_outline_rounded),
               ),
             ],
           ),
           const SizedBox(width: 6),
-          Expanded(
-            child: ListenableBuilder(
-              listenable: controller.phase,
-              builder: (context, _) => PlayerScoreCard(
-                player: controller.bottom,
-                highlight: _attacking(controller.bottom),
-              ),
-            ),
-          ),
+          Expanded(child: PlayerScoreCard(player: controller.bottom)),
         ],
       ),
     );
-  }
-
-  bool _attacking(Player player) {
-    final phase = controller.phase.value;
-    return identical(controller.roundWinner, player) &&
-        (phase == GamePhase.playerSuccess ||
-            phase == GamePhase.targeting ||
-            phase == GamePhase.balloonDestroyed);
   }
 }

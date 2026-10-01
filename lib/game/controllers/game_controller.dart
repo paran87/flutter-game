@@ -8,12 +8,12 @@ import '../models/balloon.dart';
 import '../models/game_config.dart';
 import '../models/game_result.dart';
 import '../models/game_state.dart';
-import '../models/game_stats.dart';
 import '../models/ink_trace.dart';
 import '../models/obstacle_dot.dart';
 import '../models/player.dart';
 import '../models/player_identities.dart';
 import '../services/game_feedback.dart';
+import '../utils/collision_utils.dart';
 import '../utils/obstacle_generator.dart';
 import 'collision_controller.dart';
 import 'effects_controller.dart';
@@ -22,14 +22,6 @@ import 'player_agent.dart';
 import 'scoring_controller.dart';
 import 'timer_controller.dart';
 import 'win_resolver.dart';
-
-/// A successful crossing, shown in the "RUN COMPLETE" card.
-class RunSuccess {
-  const RunSuccess(this.player, this.summary);
-
-  final Player player;
-  final RunSummary summary;
-}
 
 /// A failed run, shown as a toast near that player's side.
 class RunFailure {
@@ -42,21 +34,31 @@ class RunFailure {
   final int serial;
 }
 
+/// A balloon whose pop animation is playing.
+class _Pop {
+  _Pop(this.owner, this.balloon);
+
+  final Player owner;
+  final Balloon balloon;
+  double age = 0;
+  bool feedbackDone = false;
+}
+
 /// Central game state machine. Owns players, the obstacle field, the clock
-/// and round progression. Widgets only read from it and forward input.
+/// and the run lifecycle. Widgets only read from it and forward input.
 ///
-/// Flow of a round:
+/// The match is one continuous race on one dot field — there are no rounds:
 ///
-///   intro/nextRound → countdown → playing ──(someone crosses)──► playerSuccess
-///        ▲                          │                                │
-///        │                     (run fails: that player resets,       ▼
-///        │                      the other keeps racing)          targeting
-///        │                                                           │
-///        └────────────── nextRound ◄──── balloonDestroyed ◄──────────┘
-///                                              │
-///                                   (all balloons gone) ──► gameOver
+///   intro → countdown → playing ──(clock hits 0 / a side has no balloons)──► gameOver
 ///
-/// All timing is driven by [tick], so the whole match can be simulated
+/// Each player independently loops through runs while playing:
+///
+///   ready ──move──► running ──cross the line──► hunting ──touch balloon──► finished
+///     ▲                │                                                    │
+///     │                └──out of ink / pen lifted──► failed (−1 attempt)    │
+///     └────────────────────────── respawn at start ◄───────────────────────┘
+///
+/// All timing is driven by [tick], so a whole match can be simulated
 /// headlessly in tests.
 class GameController {
   GameController({
@@ -66,7 +68,7 @@ class GameController {
     GameFeedback? feedback,
   }) : feedback = feedback ?? GameFeedback.silent(),
        scoring = ScoringController(config),
-       _baseSeed = config.obstacleSeed ?? math.Random().nextInt(1 << 30),
+       _seed = config.obstacleSeed ?? math.Random().nextInt(1 << 30),
        _movement = MovementController(config) {
     bottom = Player(
       side: PlayerSide.bottom,
@@ -89,7 +91,7 @@ class GameController {
       criticalSeconds: config.timerCriticalSeconds,
     );
     timerSeconds = ValueNotifier(timer.displaySeconds);
-    _generateField();
+    field.value = ObstacleGenerator(config).generate(_seed);
     for (final p in players) {
       _startRun(p);
     }
@@ -102,7 +104,7 @@ class GameController {
   final GameFeedback feedback;
   final ScoringController scoring;
   final EffectsController effects = EffectsController();
-  final int _baseSeed;
+  final int _seed;
   final MovementController _movement;
   late final Map<Player, CollisionController> _collisions;
 
@@ -113,18 +115,17 @@ class GameController {
   /// Fires every simulated frame; painters repaint from it.
   final FrameSignal frame = FrameSignal();
 
-  /// Fires when a new obstacle field is generated.
+  /// The dot field (one layout for the whole match).
   final ValueNotifier<ObstacleField> field = ValueNotifier(
     ObstacleField.empty(Rect.zero),
   );
 
-  /// Traces from failed runs that are fading away.
+  /// Finished or failed traces that are fading away.
   final List<FadingTrace> fadingTraces = [];
 
   final ValueNotifier<GamePhase> phase = ValueNotifier(GamePhase.intro);
-  final ValueNotifier<int> round = ValueNotifier(1);
 
-  /// The match clock; it only runs while players are racing.
+  /// The match clock.
   late final TimerController timer;
 
   /// Whole seconds left, for the HUD (notifies once per second).
@@ -133,16 +134,23 @@ class GameController {
   /// Final result, set when the game ends.
   final ValueNotifier<GameResult?> result = ValueNotifier(null);
 
-  /// While paused nothing advances: no movement, no clock, no animations.
-  bool _paused = false;
-  bool get isPaused => _paused;
-
-  /// The most recent crossing (drives the run summary card).
-  final ValueNotifier<RunSuccess?> lastSuccess = ValueNotifier(null);
-
   /// The most recent failed run (drives failure toasts).
   final ValueNotifier<RunFailure?> lastFailure = ValueNotifier(null);
   int _failureSerial = 0;
+
+  /// Bumped whenever any balloon changes status, so balloon widgets rebuild
+  /// only then.
+  final ValueNotifier<int> balloonVersion = ValueNotifier(0);
+
+  final List<_Pop> _pops = [];
+
+  /// Fraction of the pop animation at which the balloon visibly bursts
+  /// (matches BalloonPainter's anticipation timing).
+  static const _burstFraction = 0.52;
+
+  /// While paused nothing advances: no movement, no clock, no animations.
+  bool _paused = false;
+  bool get isPaused => _paused;
 
   /// Simulated game time in seconds (advances only via [tick]).
   double _time = 0;
@@ -152,30 +160,19 @@ class GameController {
   double _phaseTime = 0;
   double get phaseTime => _phaseTime;
 
-  /// The player who crossed this round (attacker during targeting).
-  Player? _roundWinner;
-  Player? get roundWinner => _roundWinner;
-
-  /// Balloon chosen during targeting (index into the defender's balloons).
-  int? _targetIndex;
-  int? get targetIndex => _targetIndex;
-
-  /// Bumped whenever any balloon changes status, so balloon widgets rebuild
-  /// only then.
-  final ValueNotifier<int> balloonVersion = ValueNotifier(0);
-
-  /// The defender balloon the attacker is currently eyeing (aim sweep).
-  final ValueNotifier<int?> aimingAt = ValueNotifier(null);
-
-  /// Brief lock-on before the pop, so the choice reads as intentional.
-  static const _lockOnSeconds = 0.35;
-
   PlayerAgent agentFor(Player p) =>
       identical(p, bottom) ? bottomAgent : topAgent;
   Player opponentOf(Player p) => identical(p, bottom) ? top : bottom;
   CollisionController collisionsFor(Player p) => _collisions[p]!;
 
   bool get isPlaying => phase.value == GamePhase.playing;
+
+  /// World position of [owner]'s balloon [index].
+  Offset balloonCenter(Player owner, int index) => config.balloonCenter(
+    topOwner: owner.isTop,
+    index: index,
+    count: owner.balloons.length,
+  );
 
   AgentContext _contextFor(Player p) => AgentContext(
     config: config,
@@ -189,12 +186,6 @@ class GameController {
   void _setPhase(GamePhase next) {
     _phaseTime = 0;
     phase.value = next;
-  }
-
-  void _generateField() {
-    // Each round gets its own layout, reproducible from the base seed.
-    final seed = _baseSeed + (round.value - 1) * 7919;
-    field.value = ObstacleGenerator(config).generate(seed);
   }
 
   void _startRun(Player p) {
@@ -214,27 +205,17 @@ class GameController {
       t.age += dt;
     }
     fadingTraces.removeWhere((t) => t.isDone);
+    // Pops finish animating even after the final whistle.
+    _tickPops(dt);
 
     switch (phase.value) {
       case GamePhase.intro:
-      case GamePhase.nextRound:
-        final hold = phase.value == GamePhase.intro
-            ? config.introDuration
-            : config.nextRoundDuration;
-        if (_phaseTime >= _seconds(hold)) _beginCountdown();
+        if (_phaseTime >= _seconds(config.introDuration)) _beginCountdown();
       case GamePhase.countdown:
         _tickCountdown();
       case GamePhase.playing:
         _tickClock(dt);
         if (isPlaying) _tickPlaying(dt);
-      case GamePhase.playerSuccess:
-        if (_phaseTime >= _seconds(config.successSummaryDuration)) {
-          _beginTargeting();
-        }
-      case GamePhase.targeting:
-        _tickTargeting();
-      case GamePhase.balloonDestroyed:
-        _tickBalloonDestroyed();
       case GamePhase.gameOver:
         break;
     }
@@ -259,11 +240,13 @@ class GameController {
             _startRun(p);
           }
         case RunStatus.finished:
+          p.statusTime += dt;
+          if (p.statusTime >= _seconds(config.respawnDelay)) _startRun(p);
         case RunStatus.halted:
         case RunStatus.eliminated:
           break;
       }
-      // A crossing ends the round immediately for both players.
+      // Popping the last balloon ends the match on the spot.
       if (!isPlaying) return;
     }
     if (bottom.runStatus == RunStatus.eliminated &&
@@ -363,9 +346,9 @@ class GameController {
     p.run.distance = scoring.distanceFromWorld(p.trace.length);
     _checkCollisions(p, from, p.position);
 
-    if (_reachedGoal(p)) {
-      _succeedRun(p);
-    } else if (p.trace.length >= config.inkCapacity) {
+    if (!p.hasCrossed && _reachedGoal(p)) _cross(p);
+    if (p.hasCrossed && _tryPop(p, from, p.position)) return;
+    if (p.trace.length >= config.inkCapacity) {
       _failRun(p, FailureReason.outOfInk);
     }
   }
@@ -395,23 +378,75 @@ class GameController {
 
   // ------------------------------------------------------- Run outcomes
 
-  void _succeedRun(Player p) {
-    p.runStatus = RunStatus.finished;
-    p.stats.successfulRuns++;
-    final summary = scoring.closeRun(p, bank: true);
-    _roundWinner = p;
-    lastSuccess.value = RunSuccess(p, summary);
-    effects.burst(p.position, p.identity.color, maxRadius: 120, duration: 0.9);
-    feedback.runSucceeded(local: !p.identity.isBot);
+  /// The pen made it through the dots; now it may hunt a balloon.
+  void _cross(Player p) {
+    p.hasCrossed = true;
+    effects.burst(p.position, p.identity.color, maxRadius: 90, duration: 0.7);
+    if (!p.identity.isBot) feedback.haptics.selection();
+  }
 
-    // The other player's run is cut short by the crossing.
-    final other = opponentOf(p);
-    if (other.runStatus == RunStatus.running ||
-        other.runStatus == RunStatus.ready) {
-      scoring.closeRun(other, bank: config.bankInterruptedRunScore);
-      other.runStatus = RunStatus.halted;
+  /// Pops the first living opponent balloon the pen touched this step.
+  bool _tryPop(Player p, Offset from, Offset to) {
+    final owner = opponentOf(p);
+    for (final balloon in owner.aliveBalloons) {
+      final hit = sweptCircleHits(
+        from: from,
+        to: to,
+        penRadius: config.playerRadius,
+        center: balloonCenter(owner, balloon.index),
+        radius: config.balloonHitRadius,
+        tolerance: config.collisionTolerance,
+      );
+      if (hit) {
+        _pop(p, owner, balloon);
+        return true;
+      }
     }
-    _setPhase(GamePhase.playerSuccess);
+    return false;
+  }
+
+  void _pop(Player attacker, Player owner, Balloon balloon) {
+    balloon.status = BalloonStatus.popping;
+    _pops.add(_Pop(owner, balloon));
+    balloonVersion.value++;
+
+    attacker.stats.balloonsDestroyed++;
+    attacker.stats.successfulRuns++;
+    // Only a run that pops a balloon banks its points.
+    final summary = scoring.closeRun(attacker, bank: true);
+    final at = balloonCenter(owner, balloon.index);
+    effects.floatText(
+      at,
+      '+',
+      summary.runScore,
+      attacker.identity.color,
+      duration: 1.4,
+    );
+    feedback.runSucceeded(local: !attacker.identity.isBot);
+
+    // The finished line fades; the pen respawns at its start shortly.
+    fadingTraces.add(FadingTrace(attacker.trace, attacker.identity.color, 1.2));
+    attacker.beginFreshTrace();
+    attacker.runStatus = RunStatus.finished;
+    attacker.statusTime = 0;
+
+    if (owner.aliveBalloons.isEmpty) _endGame(GameEndTrigger.balloons);
+  }
+
+  void _tickPops(double dt) {
+    final duration = _seconds(config.balloonAnimationDuration);
+    for (final pop in _pops) {
+      pop.age += dt;
+      if (!pop.feedbackDone && pop.age >= duration * _burstFraction) {
+        pop.feedbackDone = true;
+        feedback.balloonDestroyed(localOwner: !pop.owner.identity.isBot);
+      }
+      if (pop.age >= duration) {
+        pop.balloon.status = BalloonStatus.destroyed;
+        balloonVersion.value++;
+      }
+    }
+    _pops.removeWhere((pop) => pop.age >= duration);
   }
 
   void _failRun(Player p, FailureReason reason) {
@@ -434,103 +469,6 @@ class GameController {
     effects.burst(p.position, AppColors.danger, maxRadius: 70);
     lastFailure.value = RunFailure(p, reason, ++_failureSerial);
     feedback.runFailed(local: !p.identity.isBot);
-  }
-
-  // ------------------------------------------------------------ Targeting
-
-  /// The player whose balloons are under attack.
-  Player? get defender {
-    final attacker = _roundWinner;
-    return attacker == null ? null : opponentOf(attacker);
-  }
-
-  void _beginTargeting() {
-    final attacker = _roundWinner!;
-    agentFor(attacker).reset();
-    _targetIndex = null;
-    _setPhase(GamePhase.targeting);
-  }
-
-  void _tickTargeting() {
-    final attacker = _roundWinner!;
-    final target = defender!;
-    final available = target.aliveBalloonIndexes;
-
-    if (_targetIndex == null) {
-      final agent = agentFor(attacker);
-      var choice = agent.chooseBalloon(available, _phaseTime);
-      aimingAt.value = choice ?? agent.aimHint;
-      // Nobody waits forever: pick for an idle attacker when time runs out.
-      if (choice == null &&
-          _phaseTime >= _seconds(config.targetingDuration) &&
-          available.isNotEmpty) {
-        choice = available[math.Random().nextInt(available.length)];
-      }
-      if (choice != null && available.contains(choice)) {
-        _targetIndex = choice;
-        target.balloons[choice].status = BalloonStatus.targeted;
-        _lockOnAt = _phaseTime;
-        balloonVersion.value++;
-        feedback.haptics.selection();
-      }
-      return;
-    }
-
-    if (_phaseTime - _lockOnAt >= _lockOnSeconds) {
-      target.balloons[_targetIndex!].status = BalloonStatus.popping;
-      balloonVersion.value++;
-      _popFeedbackDone = false;
-      _setPhase(GamePhase.balloonDestroyed);
-    }
-  }
-
-  double _lockOnAt = 0;
-  bool _popFeedbackDone = false;
-
-  /// Fraction of the pop animation at which the balloon visibly bursts
-  /// (matches BalloonPainter's anticipation timing).
-  static const _burstFraction = 0.52;
-
-  void _tickBalloonDestroyed() {
-    final attacker = _roundWinner!;
-    final target = defender!;
-    final balloon = target.balloons[_targetIndex!];
-    final popTime = _seconds(config.balloonAnimationDuration);
-
-    if (!_popFeedbackDone && _phaseTime >= popTime * _burstFraction) {
-      _popFeedbackDone = true;
-      feedback.balloonDestroyed(localOwner: !target.identity.isBot);
-    }
-
-    if (balloon.status == BalloonStatus.popping && _phaseTime >= popTime) {
-      balloon.status = BalloonStatus.destroyed;
-      attacker.stats.balloonsDestroyed++;
-      balloonVersion.value++;
-    }
-    if (_phaseTime >= popTime + _seconds(config.postPopPause)) {
-      if (target.balloonsStanding == 0) {
-        _endGame(GameEndTrigger.balloons);
-      } else {
-        _beginNextRound();
-      }
-    }
-  }
-
-  // --------------------------------------------------------------- Rounds
-
-  void _beginNextRound() {
-    aimingAt.value = null;
-    round.value++;
-    _roundWinner = null;
-    _targetIndex = null;
-    _generateField();
-    effects.clear();
-    fadingTraces.clear();
-    for (final p in players) {
-      agentFor(p).reset();
-      _startRun(p);
-    }
-    _setPhase(GamePhase.nextRound);
   }
 
   // ------------------------------------------------------------- Game end
@@ -560,10 +498,8 @@ class GameController {
       top: topLine,
       outcome: outcome,
       trigger: trigger,
-      rounds: round.value,
     );
-    final localWon = outcome.winner == 0;
-    feedback.gameOver(localWon: localWon);
+    feedback.gameOver(localWon: outcome.winner == 0);
     if (outcome.winner != null) {
       final winner = outcome.winner == 0 ? bottom : top;
       effects.burst(
@@ -581,7 +517,8 @@ class GameController {
     color: p.identity.color,
     isBot: p.identity.isBot,
     balloonsDestroyed: p.stats.balloonsDestroyed,
-    balloonsStanding: p.balloonsStanding,
+    // A balloon still mid-pop already counts as gone.
+    balloonsStanding: p.aliveBalloons.length,
     score: p.stats.bankedScore,
     distance: p.stats.totalDistance.round(),
     penalties: p.stats.totalPenalties,
@@ -605,11 +542,8 @@ class GameController {
     frame.dispose();
     field.dispose();
     phase.dispose();
-    round.dispose();
-    lastSuccess.dispose();
     lastFailure.dispose();
     balloonVersion.dispose();
-    aimingAt.dispose();
     timerSeconds.dispose();
     result.dispose();
     bottomAgent.dispose();

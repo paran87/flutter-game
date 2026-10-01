@@ -1,25 +1,17 @@
 /// Global phase of a match. Owned exclusively by the GameController.
+///
+/// The match is one continuous race: there are no rounds. Players keep
+/// drawing, popping balloons and respawning until the clock runs out or one
+/// side has no balloons left.
 enum GamePhase {
-  /// "Round 1" banner before the very first countdown.
+  /// "READY?" banner before the countdown.
   intro,
 
   /// 3-2-1 before players may move.
   countdown,
 
-  /// Both players racing through the dots.
+  /// Both players racing through the dots and hunting balloons.
   playing,
-
-  /// A player crossed; showing their run summary.
-  playerSuccess,
-
-  /// The crossing player is choosing an opponent balloon.
-  targeting,
-
-  /// The chosen balloon is popping.
-  balloonDestroyed,
-
-  /// Board is being reset for the next round.
-  nextRound,
 
   /// Match finished; result is available.
   gameOver,
@@ -37,10 +29,10 @@ enum RunStatus {
   /// The run failed; the failure animation plays before resetting.
   failed,
 
-  /// Reached the opponent's side.
+  /// Popped an opponent balloon; the pen respawns at its start shortly.
   finished,
 
-  /// Round ended before this player finished.
+  /// The match ended while this run was in progress.
   halted,
 
   /// No attempts left; sits out for the rest of the match.

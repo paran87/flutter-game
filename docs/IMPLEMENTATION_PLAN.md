@@ -16,14 +16,14 @@ and wraps it in a casual mobile-game UI.
 
 | Topic | Rule |
 | --- | --- |
-| Turn model | Both players race **simultaneously** through the same dot field. |
+| Turn model | Both players race **simultaneously** through the same dot field in one continuous match (no rounds). |
 | Movement | Human drags; the marker sits *above* the finger (configurable offset) and eases toward it with a speed cap. Bot follows a generated path through the same movement integrator. |
 | Collision | Touching a dot never stops a run. It costs points by dot size (5/10/20), flashes the dot, shakes the marker, briefly slows the pen, and fires a haptic. Each dot can only be re-penalised after it was left *and* the cooldown (300 ms) expired. |
-| Score | Live run score = distance − penalties (floored at 0). It is **banked** only when the run reaches the opponent's side. |
+| Score | Live run score = distance − penalties (floored at 0). It is **banked** only when the run pops a balloon. |
 | Ink | Each run has a limited amount of ink (path length). Running dry fails the run. This caps the "scribble for distance" exploit and creates the long-route-vs-safe-route trade-off. |
 | Attempts | Consumed only by failed runs: *out of ink*, or *pen lifted* for longer than the grace period mid-run. A player with 0 attempts sits out; if both are out, the game ends. |
-| Round | The first player to cross banks their run and attacks one opponent balloon. Then both players reset, a fresh dot field is generated, and the next round starts. |
-| Timer | 2:00 game clock that only runs while players are racing. Warning states at 0:30 and 0:10. |
+| Balloons | After crossing the opponent's line the pen keeps going and must physically touch an opponent balloon to pop it (one per run). The pen then respawns at its start; the opponent is never interrupted. |
+| Timer | 2:00 game clock, running continuously once play starts. Warning states at 0:30 and 0:10. Final totals appear on the result screen. |
 | Win | Destroy all three opponent balloons, or when the clock expires: balloons destroyed → total score → total distance → draw. |
 
 ## Architecture
