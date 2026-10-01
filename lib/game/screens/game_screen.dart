@@ -7,6 +7,7 @@ import '../controllers/player_agent.dart';
 import '../models/game_config.dart';
 import '../rendering/board_transform.dart';
 import '../rendering/paper_painter.dart';
+import '../services/game_feedback.dart';
 import '../widgets/game_board.dart';
 import '../widgets/scoreboard.dart';
 import '../widgets/timer_widget.dart';
@@ -29,6 +30,7 @@ class _GameScreenState extends State<GameScreen>
     config: widget.config,
     bottomAgent: _human,
     topAgent: IdleAgent(),
+    feedback: GameFeedback(),
   );
   late final Ticker _ticker = createTicker(_onTick);
   final GlobalKey _boardKey = GlobalKey();

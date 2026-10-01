@@ -8,6 +8,7 @@ import '../rendering/board_decor_painter.dart';
 import '../rendering/board_transform.dart';
 import '../rendering/game_board_painter.dart';
 import '../rendering/obstacle_painter.dart';
+import '../rendering/effects_painter.dart';
 import '../rendering/trace_painter.dart';
 import 'balloon_widget.dart';
 
@@ -40,6 +41,7 @@ class GameBoard extends StatefulWidget {
 class _GameBoardState extends State<GameBoard> {
   /// Lives as long as the board so cached trace geometry survives rebuilds.
   late final TraceRenderer _traces = TraceRenderer(widget.controller.config);
+  final EffectsPainter _effects = EffectsPainter();
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +89,7 @@ class _GameBoardState extends State<GameBoard> {
                     controller: controller,
                     transform: transform,
                     traces: _traces,
+                    effects: _effects,
                     touchAgent: touchAgent,
                   ),
                 ),

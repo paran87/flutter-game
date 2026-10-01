@@ -5,6 +5,7 @@ import '../controllers/player_agent.dart';
 import '../models/player.dart';
 import '../widgets/player_marker.dart';
 import 'board_transform.dart';
+import 'effects_painter.dart';
 import 'trace_painter.dart';
 
 /// Dynamic board layer, repainted every frame from [GameController.frame]
@@ -14,27 +15,32 @@ class GameBoardPainter extends CustomPainter {
     required this.controller,
     required this.transform,
     required this.traces,
+    required this.effects,
     this.touchAgent,
   }) : super(repaint: controller.frame);
 
   final GameController controller;
   final BoardTransform transform;
   final TraceRenderer traces;
+  final EffectsPainter effects;
   final TouchPlayerAgent? touchAgent;
 
   @override
   void paint(Canvas canvas, Size size) {
-    _paintTraces(canvas);
+    _paintWorld(canvas);
     _paintTether(canvas);
     for (final player in controller.players) {
       _paintMarker(canvas, player);
     }
+    effects.paintTexts(canvas, controller.effects, transform);
   }
 
-  void _paintTraces(Canvas canvas) {
+  /// Everything drawn in world units: dot flashes, traces, bursts.
+  void _paintWorld(Canvas canvas) {
     canvas.save();
     canvas.translate(transform.origin.dx, transform.origin.dy);
     canvas.scale(transform.scale);
+    effects.paintWorldEffects(canvas, controller.effects);
     final live = <int>{};
     for (final f in controller.fadingTraces) {
       live.add(f.trace.id);
@@ -84,6 +90,7 @@ class GameBoardPainter extends CustomPainter {
       controller.config.playerRadius * transform.scale,
       player.identity.color,
       label: player.identity.name,
+      shake: player.shakeRemaining / 0.22,
     );
   }
 
