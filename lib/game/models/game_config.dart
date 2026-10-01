@@ -106,9 +106,9 @@ class GameConfig {
     this.penLiftFailsRun = true,
     this.penLiftGracePeriod = const Duration(milliseconds: 1500),
     // Trace rendering
-    this.traceWidth = 3.6,
+    this.traceWidth = 4.0,
     this.traceOpacity = 0.9,
-    this.traceJitter = 0.55,
+    this.traceJitter = 0.8,
     // Phase timings
     this.introDuration = const Duration(milliseconds: 1300),
     this.countdownStep = const Duration(milliseconds: 650),

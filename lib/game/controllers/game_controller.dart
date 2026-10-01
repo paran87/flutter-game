@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/game_config.dart';
 import '../models/game_state.dart';
+import '../models/ink_trace.dart';
 import '../models/obstacle_dot.dart';
 import '../models/player.dart';
 import '../models/player_identities.dart';
@@ -60,6 +61,9 @@ class GameController {
     ObstacleField.empty(Rect.zero),
   );
 
+  /// Traces from failed runs that are fading away.
+  final List<FadingTrace> fadingTraces = [];
+
   final ValueNotifier<GamePhase> phase = ValueNotifier(GamePhase.intro);
   final ValueNotifier<int> round = ValueNotifier(1);
 
@@ -87,6 +91,11 @@ class GameController {
 
   /// Advances the simulation by [dt] seconds.
   void tick(double dt) {
+    for (final t in fadingTraces) {
+      t.age += dt;
+    }
+    fadingTraces.removeWhere((t) => t.isDone);
+
     if (phase.value == GamePhase.playing) {
       for (final p in players) {
         _updatePlayer(p, dt);
@@ -113,6 +122,10 @@ class GameController {
     if (p.runStatus == RunStatus.ready &&
         (p.position - p.startPosition).distance > config.runStartThreshold) {
       p.runStatus = RunStatus.running;
+    }
+    if (p.runStatus == RunStatus.running) {
+      // The same points feed the ballpoint rendering and distance tracking.
+      p.trace.addPoint(p.position, minSpacing: config.minTracePointSpacing);
     }
   }
 

@@ -8,6 +8,7 @@ import '../rendering/board_decor_painter.dart';
 import '../rendering/board_transform.dart';
 import '../rendering/game_board_painter.dart';
 import '../rendering/obstacle_painter.dart';
+import '../rendering/trace_painter.dart';
 import 'balloon_widget.dart';
 
 /// The playing surface: decor, dots, traces, markers and balloons.
@@ -16,7 +17,7 @@ import 'balloon_widget.dart';
 ///   * decor and obstacles — cached behind RepaintBoundaries,
 ///   * traces/markers/effects — one CustomPainter repainted per frame,
 ///   * balloons — widgets, rebuilt only when balloon state changes.
-class GameBoard extends StatelessWidget {
+class GameBoard extends StatefulWidget {
   const GameBoard({
     super.key,
     required this.controller,
@@ -33,14 +34,24 @@ class GameBoard extends StatelessWidget {
   final ValueChanged<BoardTransform> onTransform;
 
   @override
+  State<GameBoard> createState() => _GameBoardState();
+}
+
+class _GameBoardState extends State<GameBoard> {
+  /// Lives as long as the board so cached trace geometry survives rebuilds.
+  late final TraceRenderer _traces = TraceRenderer(widget.controller.config);
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final touchAgent = widget.touchAgent;
     return LayoutBuilder(
       builder: (context, constraints) {
         final transform = BoardTransform.fit(
           constraints.biggest,
           controller.config,
         );
-        onTransform(transform);
+        widget.onTransform(transform);
         return Stack(
           clipBehavior: Clip.none,
           children: [
@@ -75,6 +86,7 @@ class GameBoard extends StatelessWidget {
                   painter: GameBoardPainter(
                     controller: controller,
                     transform: transform,
+                    traces: _traces,
                     touchAgent: touchAgent,
                   ),
                 ),
