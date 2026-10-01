@@ -55,6 +55,9 @@ abstract class PlayerAgent {
   /// chosen balloon index once decided, or null to keep thinking.
   int? chooseBalloon(List<int> available, double elapsed);
 
+  /// A planned route to visualise in debug mode (empty if none).
+  List<Offset> get debugPath => const [];
+
   /// Which balloon the agent is currently eyeing while choosing, if any
   /// (purely presentational; lets the opponent see the aim sweep).
   int? get aimHint => null;

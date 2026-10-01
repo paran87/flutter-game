@@ -10,6 +10,7 @@ import '../models/game_state.dart';
 import '../models/player.dart';
 import '../widgets/player_marker.dart';
 import 'board_transform.dart';
+import 'debug_painter.dart';
 import 'effects_painter.dart';
 import 'trace_painter.dart';
 
@@ -22,12 +23,16 @@ class GameBoardPainter extends CustomPainter {
     required this.traces,
     required this.effects,
     this.touchAgent,
+    this.debug,
   }) : super(repaint: controller.frame);
 
   final GameController controller;
   final BoardTransform transform;
   final TraceRenderer traces;
   final EffectsPainter effects;
+
+  /// Non-null when the debug overlay is enabled.
+  final DebugPainter? debug;
   final TouchPlayerAgent? touchAgent;
 
   @override
@@ -55,6 +60,7 @@ class GameBoardPainter extends CustomPainter {
       live.add(p.trace.id);
       traces.paint(canvas, p.trace, p.identity.color);
     }
+    debug?.paint(canvas, controller);
     canvas.restore();
     traces.retainOnly(live);
   }
@@ -145,12 +151,20 @@ class GameBoardPainter extends CustomPainter {
         ? (controller.time * 1.2) % 1.0
         : 0.0;
 
+    // Name chips only while racing; they would clutter the attack screens.
+    final phase = controller.phase.value;
+    final showLabel =
+        phase == GamePhase.intro ||
+        phase == GamePhase.nextRound ||
+        phase == GamePhase.countdown ||
+        phase == GamePhase.playing;
+
     PlayerMarkerPainter.paint(
       canvas,
       center,
       radius,
       player.identity.color,
-      label: player.identity.name,
+      label: showLabel ? player.identity.name : null,
       shake: player.shakeRemaining / 0.22,
       pulse: idlePulse,
       dim: dim,

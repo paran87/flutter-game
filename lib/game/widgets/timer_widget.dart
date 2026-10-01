@@ -13,6 +13,7 @@ class TimerWidget extends StatefulWidget {
     required this.warningSeconds,
     required this.criticalSeconds,
     this.running = true,
+    this.compact = false,
   });
 
   final int seconds;
@@ -21,6 +22,9 @@ class TimerWidget extends StatefulWidget {
 
   /// False while the clock is paused between rounds (shown dimmed).
   final bool running;
+
+  /// Smaller variant for narrow screens.
+  final bool compact;
 
   @override
   State<TimerWidget> createState() => _TimerWidgetState();
@@ -91,7 +95,10 @@ class _TimerWidgetState extends State<TimerWidget>
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          padding: EdgeInsets.symmetric(
+            horizontal: widget.compact ? 9 : 14,
+            vertical: widget.compact ? 4 : 6,
+          ),
           decoration: BoxDecoration(
             color: _critical
                 ? AppColors.danger.withValues(alpha: 0.1)
@@ -109,12 +116,14 @@ class _TimerWidgetState extends State<TimerWidget>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.timer_outlined, size: 18, color: color),
-              const SizedBox(width: 4),
+              if (!widget.compact) ...[
+                Icon(Icons.timer_outlined, size: 18, color: color),
+                const SizedBox(width: 4),
+              ],
               AnimatedDefaultTextStyle(
                 duration: const Duration(milliseconds: 300),
                 style: TextStyle(
-                  fontSize: 24,
+                  fontSize: widget.compact ? 19 : 24,
                   fontWeight: FontWeight.w900,
                   color: widget.running ? color : color.withValues(alpha: 0.55),
                   letterSpacing: 1,

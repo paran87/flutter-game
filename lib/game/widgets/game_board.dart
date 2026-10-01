@@ -7,12 +7,14 @@ import '../models/obstacle_dot.dart';
 import '../models/player.dart';
 import '../rendering/board_decor_painter.dart';
 import '../rendering/board_transform.dart';
+import '../rendering/debug_painter.dart';
 import '../rendering/game_board_painter.dart';
 import '../rendering/obstacle_painter.dart';
 import '../rendering/effects_painter.dart';
 import '../rendering/trace_painter.dart';
 import 'balloon_widget.dart';
 import 'board_overlays.dart';
+import 'debug_panel.dart';
 import 'targeting_overlay.dart';
 
 /// The playing surface: decor, dots, traces, markers and balloons.
@@ -27,12 +29,16 @@ class GameBoard extends StatefulWidget {
     required this.controller,
     required this.onTransform,
     this.touchAgent,
+    this.debug = false,
   });
 
   final GameController controller;
 
   /// The local human's input, used to draw the finger tether.
   final TouchPlayerAgent? touchAgent;
+
+  /// Shows the debug geometry and live stats panel.
+  final bool debug;
 
   /// Reports the current world→screen mapping (needed for touch input).
   final ValueChanged<BoardTransform> onTransform;
@@ -45,6 +51,7 @@ class _GameBoardState extends State<GameBoard> {
   /// Lives as long as the board so cached trace geometry survives rebuilds.
   late final TraceRenderer _traces = TraceRenderer(widget.controller.config);
   final EffectsPainter _effects = EffectsPainter();
+  final DebugPainter _debug = DebugPainter();
 
   @override
   Widget build(BuildContext context) {
@@ -93,6 +100,7 @@ class _GameBoardState extends State<GameBoard> {
                     transform: transform,
                     traces: _traces,
                     effects: _effects,
+                    debug: widget.debug ? _debug : null,
                     touchAgent: touchAgent,
                   ),
                 ),
@@ -123,6 +131,12 @@ class _GameBoardState extends State<GameBoard> {
                 transform: transform,
               ),
             ),
+            if (widget.debug)
+              Positioned(
+                left: transform.boardRect.left + 4,
+                top: transform.boardRect.top + 4,
+                child: DebugPanel(controller: controller),
+              ),
           ],
         );
       },

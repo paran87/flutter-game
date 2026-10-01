@@ -6,18 +6,25 @@ import '../models/game_config.dart';
 import '../models/game_result.dart';
 import '../models/game_state.dart';
 import '../rendering/paper_painter.dart';
+import '../services/settings_controller.dart';
 import '../widgets/animated_count.dart';
 import '../widgets/celebration.dart';
 import '../widgets/ink_button.dart';
 import 'game_screen.dart';
 
 class ResultScreen extends StatefulWidget {
-  const ResultScreen({super.key, required this.result, required this.config});
+  const ResultScreen({
+    super.key,
+    required this.result,
+    required this.config,
+    this.settings = const GameSettings(),
+  });
 
   final GameResult result;
 
   /// Used to start a rematch with the same settings.
   final GameConfig config;
+  final GameSettings settings;
 
   @override
   State<ResultScreen> createState() => _ResultScreenState();
@@ -131,7 +138,12 @@ class _ResultScreenState extends State<ResultScreen>
                               primary: true,
                               onPressed: () => Navigator.of(context)
                                   .pushReplacement(
-                                    inkRoute(GameScreen(config: widget.config)),
+                                    inkRoute(
+                                      GameScreen(
+                                        config: widget.config,
+                                        settings: widget.settings,
+                                      ),
+                                    ),
                                   ),
                             ),
                             const SizedBox(height: AppSpacing.md),

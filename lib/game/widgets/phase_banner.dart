@@ -84,6 +84,8 @@ class _PhaseBannerState extends State<PhaseBanner> {
     return IgnorePointer(
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 260),
+        // Fast exit so consecutive countdown numbers never overlap.
+        reverseDuration: const Duration(milliseconds: 90),
         switchInCurve: Curves.easeOutBack,
         transitionBuilder: (child, a) => ScaleTransition(
           scale: Tween(begin: 0.4, end: 1.0).animate(a),

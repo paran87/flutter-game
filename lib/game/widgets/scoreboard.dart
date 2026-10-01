@@ -9,7 +9,9 @@ import 'ink_meter.dart';
 
 /// Compact player card: name, score, attempts, balloons, distance and ink.
 ///
-/// Rebuilds only when the player's [PlayerHudSnapshot] changes.
+/// Rebuilds only when the player's [PlayerHudSnapshot] changes. Adapts to
+/// the available width: below [_compactWidth] the name is dropped and
+/// numbers scale down rather than overflow.
 class PlayerScoreCard extends StatelessWidget {
   const PlayerScoreCard({
     super.key,
@@ -21,6 +23,8 @@ class PlayerScoreCard extends StatelessWidget {
 
   /// Emphasise the card (e.g. this player is attacking).
   final bool highlight;
+
+  static const _compactWidth = 150.0;
 
   @override
   Widget build(BuildContext context) {
@@ -52,90 +56,149 @@ class PlayerScoreCard extends StatelessWidget {
                 ),
               ],
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < _compactWidth - 18;
+                final balloons = Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _Tag(identity: identity),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        identity.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.8,
-                          color: AppColors.ink,
-                        ),
-                      ),
-                    ),
-                    AttemptsWidget(
-                      remaining: hud.attempts,
-                      max: hud.maxAttempts,
-                      color: identity.color,
-                      size: 12,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    AnimatedCount(
-                      value: hud.score,
-                      gainColor: AppColors.success,
-                      style: const TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.ink,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(width: 3),
-                    Text('PTS', style: labelStyle),
-                    const Spacer(),
                     for (var i = 0; i < player.balloons.length; i++)
                       Padding(
                         padding: const EdgeInsets.only(left: 1),
                         child: MiniBalloon(
                           color: identity.color,
                           standing: i < hud.balloonsStanding,
-                          size: 9,
+                          size: compact ? 8 : 9,
                         ),
                       ),
                   ],
-                ),
-                const SizedBox(height: 4),
-                Row(
+                );
+                final score = FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      AnimatedCount(
+                        value: hud.score,
+                        gainColor: AppColors.success,
+                        style: const TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.ink,
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      Text('PTS', style: labelStyle),
+                    ],
+                  ),
+                );
+                final distance = FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        formatThousands(hud.totalDistance),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.inkSoft,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Text('DIST', style: labelStyle),
+                    ],
+                  ),
+                );
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: InkMeter(
-                        percent: hud.inkPercent,
-                        color: identity.color,
-                        compact: true,
-                        width: double.infinity,
-                      ),
+                    Row(
+                      children: [
+                        _Tag(identity: identity),
+                        const SizedBox(width: 5),
+                        if (!compact)
+                          Expanded(
+                            child: Text(
+                              identity.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.8,
+                                color: AppColors.ink,
+                              ),
+                            ),
+                          ),
+                        // Hearts shrink rather than overflow on tiny cards.
+                        Flexible(
+                          flex: compact ? 1 : 0,
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: AttemptsWidget(
+                                remaining: hud.attempts,
+                                max: hud.maxAttempts,
+                                color: identity.color,
+                                size: compact ? 10 : 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      formatThousands(hud.totalDistance),
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.inkSoft,
-                        fontFeatures: [FontFeature.tabularFigures()],
+                    const SizedBox(height: 3),
+                    if (compact) ...[
+                      score,
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          balloons,
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: distance,
+                            ),
+                          ),
+                        ],
                       ),
+                    ] else
+                      Row(
+                        children: [
+                          Expanded(child: score),
+                          balloons,
+                        ],
+                      ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkMeter(
+                            percent: hud.inkPercent,
+                            color: identity.color,
+                            compact: true,
+                            width: double.infinity,
+                          ),
+                        ),
+                        if (!compact) ...[
+                          const SizedBox(width: 6),
+                          Flexible(child: distance),
+                        ],
+                      ],
                     ),
-                    const SizedBox(width: 2),
-                    Text('DIST', style: labelStyle),
                   ],
-                ),
-              ],
+                );
+              },
             ),
           ),
         );

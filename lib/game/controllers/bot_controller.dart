@@ -48,6 +48,9 @@ class BotController extends PlayerAgent {
   List<Offset> get plannedPath => _path;
 
   @override
+  List<Offset> get debugPath => _path;
+
+  @override
   void onRunStart(AgentContext context) {
     _runCount++;
     _rng = math.Random((seed ?? context.field.seed) * 31 + _runCount);

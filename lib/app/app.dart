@@ -1,45 +1,76 @@
 import 'package:flutter/material.dart';
 
-import '../game/models/game_config.dart';
 import '../game/screens/game_screen.dart';
 import '../game/screens/home_screen.dart';
+import '../game/screens/settings_screen.dart';
+import '../game/screens/tutorial_screen.dart';
+import '../game/services/settings_controller.dart';
 import 'theme.dart';
 
 /// Dev override for quick testing: `--dart-define=MATCH_SECONDS=15`.
-const _matchSeconds = int.fromEnvironment('MATCH_SECONDS', defaultValue: 120);
+const _matchSecondsOverride = int.fromEnvironment('MATCH_SECONDS');
 
 abstract final class AppRoutes {
   static const home = '/';
   static const game = '/game';
   static const tutorial = '/tutorial';
   static const settings = '/settings';
-  static const result = '/result';
 }
 
-class DotlineDuelApp extends StatelessWidget {
-  const DotlineDuelApp({super.key});
+class DotlineDuelApp extends StatefulWidget {
+  const DotlineDuelApp({super.key, this.settings});
+
+  /// Injected in tests; otherwise the app owns its own controller.
+  final SettingsController? settings;
+
+  @override
+  State<DotlineDuelApp> createState() => _DotlineDuelAppState();
+}
+
+class _DotlineDuelAppState extends State<DotlineDuelApp> {
+  late final SettingsController _settings =
+      widget.settings ?? SettingsController();
+
+  @override
+  void dispose() {
+    if (widget.settings == null) _settings.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Dotline Duel',
-      debugShowCheckedModeBanner: false,
-      theme: buildAppTheme(),
-      initialRoute: AppRoutes.home,
-      onGenerateRoute: _onGenerateRoute,
+    return SettingsScope(
+      controller: _settings,
+      child: MaterialApp(
+        title: 'Dotline Duel',
+        debugShowCheckedModeBanner: false,
+        theme: buildAppTheme(),
+        initialRoute: AppRoutes.home,
+        onGenerateRoute: _onGenerateRoute,
+      ),
     );
   }
 
-  static Route<dynamic> _onGenerateRoute(RouteSettings settings) {
-    final Widget page = switch (settings.name) {
-      AppRoutes.game => GameScreen(
-        config: GameConfig(gameDuration: Duration(seconds: _matchSeconds)),
-      ),
+  Route<dynamic> _onGenerateRoute(RouteSettings route) {
+    final Widget page = switch (route.name) {
+      AppRoutes.game => gameScreenFor(_settings.value),
+      AppRoutes.tutorial => const TutorialScreen(),
+      AppRoutes.settings => const SettingsScreen(),
       _ => const HomeScreen(),
     };
-    return inkRoute(page, settings);
+    return inkRoute(page, route);
   }
 }
+
+/// A new match using the current settings.
+GameScreen gameScreenFor(GameSettings settings) => GameScreen(
+  settings: settings,
+  config: settings.toConfig(
+    matchSecondsOverride: _matchSecondsOverride > 0
+        ? _matchSecondsOverride
+        : null,
+  ),
+);
 
 /// Fade + gentle rise, like a sheet of paper sliding into place.
 PageRoute<T> inkRoute<T>(Widget page, [RouteSettings? settings]) {

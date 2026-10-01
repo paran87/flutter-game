@@ -11,7 +11,10 @@ import '../models/game_state.dart';
 import '../models/player.dart';
 import '../rendering/board_transform.dart';
 import '../rendering/paper_painter.dart';
+import '../services/audio_service.dart';
 import '../services/game_feedback.dart';
+import '../services/haptics_service.dart';
+import '../services/settings_controller.dart';
 import '../widgets/game_board.dart';
 import '../widgets/pause_overlay.dart';
 import '../widgets/scoreboard.dart';
@@ -20,9 +23,14 @@ import '../widgets/timer_widget.dart';
 import 'result_screen.dart';
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, this.config = const GameConfig()});
+  const GameScreen({
+    super.key,
+    this.config = const GameConfig(),
+    this.settings = const GameSettings(),
+  });
 
   final GameConfig config;
+  final GameSettings settings;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -37,7 +45,10 @@ class _GameScreenState extends State<GameScreen>
     config: widget.config,
     bottomAgent: _human,
     topAgent: BotController(difficulty: widget.config.botDifficulty),
-    feedback: GameFeedback(),
+    feedback: GameFeedback(
+      audio: SystemAudioService()..enabled = widget.settings.soundEnabled,
+      haptics: HapticsService(enabled: widget.settings.hapticsEnabled),
+    ),
   );
   late final Ticker _ticker = createTicker(_onTick);
   final GlobalKey _boardKey = GlobalKey();
@@ -74,7 +85,13 @@ class _GameScreenState extends State<GameScreen>
     if (_controller.phaseTime < delay) return;
     _leaving = true;
     Navigator.of(context).pushReplacement(
-      inkRoute(ResultScreen(result: result, config: widget.config)),
+      inkRoute(
+        ResultScreen(
+          result: result,
+          config: widget.config,
+          settings: widget.settings,
+        ),
+      ),
     );
   }
 
@@ -163,6 +180,7 @@ class _GameScreenState extends State<GameScreen>
                           child: GameBoard(
                             controller: _controller,
                             touchAgent: _human,
+                            debug: widget.settings.debugMode,
                             onTransform: (t) => _transform = t,
                           ),
                         ),
@@ -185,7 +203,12 @@ class _GameScreenState extends State<GameScreen>
                   child: PauseOverlay(
                     onResume: () => _setPaused(false),
                     onRestart: () => Navigator.of(context).pushReplacement(
-                      inkRoute(GameScreen(config: widget.config)),
+                      inkRoute(
+                        GameScreen(
+                          config: widget.config,
+                          settings: widget.settings,
+                        ),
+                      ),
                     ),
                     onQuit: () => Navigator.of(context).pop(),
                   ),
@@ -207,8 +230,9 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final config = controller.config;
+    final narrow = MediaQuery.sizeOf(context).width < 370;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+      padding: EdgeInsets.fromLTRB(narrow ? 6 : 10, 8, narrow ? 6 : 10, 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -234,6 +258,7 @@ class _TopBar extends StatelessWidget {
                   warningSeconds: config.timerWarningSeconds,
                   criticalSeconds: config.timerCriticalSeconds,
                   running: controller.phase.value == GamePhase.playing,
+                  compact: narrow,
                 ),
               ),
               const SizedBox(height: 2),
