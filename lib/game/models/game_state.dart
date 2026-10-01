@@ -73,12 +73,20 @@ enum WinReason {
 extension WinReasonText on WinReason {
   String get description => switch (this) {
     WinReason.allBalloonsDestroyed => 'All opponent balloons destroyed',
-    WinReason.moreBalloonsDestroyed => 'Time up — more balloons destroyed',
-    WinReason.higherScore => 'Time up — balloons tied, higher total score',
-    WinReason.longerDistance => 'Time up — score tied, longer total distance',
-    WinReason.draw => 'Time up — everything tied',
+    WinReason.moreBalloonsDestroyed => 'More balloons destroyed',
+    WinReason.higherScore => 'Balloons tied — higher total score',
+    WinReason.longerDistance => 'Score tied — longer total distance',
+    WinReason.draw => 'Balloons, score and distance all tied',
   };
 }
 
 /// What ended the match.
 enum GameEndTrigger { balloons, timer, noAttempts }
+
+extension GameEndTriggerText on GameEndTrigger {
+  String get headline => switch (this) {
+    GameEndTrigger.balloons => 'All balloons popped',
+    GameEndTrigger.timer => "Time's up",
+    GameEndTrigger.noAttempts => 'No attempts left',
+  };
+}

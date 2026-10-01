@@ -6,18 +6,9 @@ import 'package:dotline_duel/game/models/game_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/scripted_agent.dart';
+import 'support/sim.dart';
 
 const emptyBoard = GameConfig(obstacleSeed: 1, obstacleDensity: 0);
-
-void runUntil(
-  GameController c,
-  bool Function() done, {
-  double maxSeconds = 30,
-}) {
-  for (var t = 0.0; t < maxSeconds && !done(); t += 1 / 60) {
-    c.tick(1 / 60);
-  }
-}
 
 /// A human agent that does not pick a balloon on its own.
 class _HesitantAgent extends ScriptedAgent {

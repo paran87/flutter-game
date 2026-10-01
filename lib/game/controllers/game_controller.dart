@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../../app/theme.dart';
 import '../models/balloon.dart';
 import '../models/game_config.dart';
+import '../models/game_result.dart';
 import '../models/game_state.dart';
 import '../models/game_stats.dart';
 import '../models/ink_trace.dart';
@@ -19,6 +20,8 @@ import 'effects_controller.dart';
 import 'movement_controller.dart';
 import 'player_agent.dart';
 import 'scoring_controller.dart';
+import 'timer_controller.dart';
+import 'win_resolver.dart';
 
 /// A successful crossing, shown in the "RUN COMPLETE" card.
 class RunSuccess {
@@ -80,11 +83,17 @@ class GameController {
       maxAttempts: config.attemptsPerPlayer,
     );
     _collisions = {for (final p in players) p: CollisionController(config)};
+    timer = TimerController(
+      duration: config.gameDuration,
+      warningSeconds: config.timerWarningSeconds,
+      criticalSeconds: config.timerCriticalSeconds,
+    );
+    timerSeconds = ValueNotifier(timer.displaySeconds);
     _generateField();
     for (final p in players) {
       _startRun(p);
     }
-    _setPhase(GamePhase.playing);
+    _setPhase(GamePhase.intro);
   }
 
   final GameConfig config;
@@ -114,6 +123,19 @@ class GameController {
 
   final ValueNotifier<GamePhase> phase = ValueNotifier(GamePhase.intro);
   final ValueNotifier<int> round = ValueNotifier(1);
+
+  /// The match clock; it only runs while players are racing.
+  late final TimerController timer;
+
+  /// Whole seconds left, for the HUD (notifies once per second).
+  late final ValueNotifier<int> timerSeconds;
+
+  /// Final result, set when the game ends.
+  final ValueNotifier<GameResult?> result = ValueNotifier(null);
+
+  /// While paused nothing advances: no movement, no clock, no animations.
+  bool _paused = false;
+  bool get isPaused => _paused;
 
   /// The most recent crossing (drives the run summary card).
   final ValueNotifier<RunSuccess?> lastSuccess = ValueNotifier(null);
@@ -181,6 +203,7 @@ class GameController {
 
   /// Advances the simulation by [dt] seconds.
   void tick(double dt) {
+    if (_paused) return;
     _time += dt;
     _phaseTime += dt;
     effects.tick(dt);
@@ -190,8 +213,17 @@ class GameController {
     fadingTraces.removeWhere((t) => t.isDone);
 
     switch (phase.value) {
+      case GamePhase.intro:
+      case GamePhase.nextRound:
+        final hold = phase.value == GamePhase.intro
+            ? config.introDuration
+            : config.nextRoundDuration;
+        if (_phaseTime >= _seconds(hold)) _beginCountdown();
+      case GamePhase.countdown:
+        _tickCountdown();
       case GamePhase.playing:
-        _tickPlaying(dt);
+        _tickClock(dt);
+        if (isPlaying) _tickPlaying(dt);
       case GamePhase.playerSuccess:
         if (_phaseTime >= _seconds(config.successSummaryDuration)) {
           _beginTargeting();
@@ -200,9 +232,6 @@ class GameController {
         _tickTargeting();
       case GamePhase.balloonDestroyed:
         _tickBalloonDestroyed();
-      case GamePhase.intro:
-      case GamePhase.countdown:
-      case GamePhase.nextRound:
       case GamePhase.gameOver:
         break;
     }
@@ -238,6 +267,55 @@ class GameController {
         top.runStatus == RunStatus.eliminated) {
       _endGame(GameEndTrigger.noAttempts);
     }
+  }
+
+  // ------------------------------------------------------ Countdown/clock
+
+  /// Number currently shown by the countdown (3, 2, 1), or 0 for "GO!".
+  int get countdownValue {
+    if (phase.value != GamePhase.countdown) return 0;
+    final step = _seconds(config.countdownStep);
+    return math.max(0, config.countdownSteps - (_phaseTime / step).floor());
+  }
+
+  int _lastCountdownValue = 0;
+
+  void _beginCountdown() {
+    _setPhase(GamePhase.countdown);
+    _lastCountdownValue = countdownValue;
+    feedback.countdownTick();
+  }
+
+  void _tickCountdown() {
+    final value = countdownValue;
+    if (value != _lastCountdownValue) {
+      _lastCountdownValue = value;
+      if (value > 0) feedback.countdownTick();
+    }
+    if (value == 0) _setPhase(GamePhase.playing);
+  }
+
+  void _tickClock(double dt) {
+    final levelChange = timer.tick(dt);
+    timerSeconds.value = timer.displaySeconds;
+    if (levelChange == TimerLevel.warning ||
+        levelChange == TimerLevel.critical) {
+      feedback.timerWarning();
+    }
+    // At zero the game stops immediately, even mid-stroke.
+    if (timer.isExpired) _endGame(GameEndTrigger.timer);
+  }
+
+  /// Pauses or resumes the whole simulation.
+  void setPaused(bool paused) {
+    if (phase.value == GamePhase.gameOver) return;
+    _paused = paused;
+    if (paused) {
+      for (final p in players) {
+        agentFor(p).reset();
+      }
+    }
+    frame.ping();
   }
 
   // ------------------------------------------------------------- Movement
@@ -446,7 +524,7 @@ class GameController {
       agentFor(p).reset();
       _startRun(p);
     }
-    _setPhase(GamePhase.playing);
+    _setPhase(GamePhase.nextRound);
   }
 
   // ------------------------------------------------------------- Game end
@@ -458,9 +536,52 @@ class GameController {
     _endTrigger = trigger;
     for (final p in players) {
       agentFor(p).reset();
+      // A run cut off by the end of the game still counts its distance.
+      if (p.runStatus == RunStatus.running) {
+        scoring.closeRun(p, bank: config.bankInterruptedRunScore);
+        p.runStatus = RunStatus.halted;
+      }
+    }
+    final bottomLine = _resultLine(bottom);
+    final topLine = _resultLine(top);
+    final outcome = resolveWinner(
+      bottom: bottomLine,
+      top: topLine,
+      trigger: trigger,
+    );
+    result.value = GameResult(
+      bottom: bottomLine,
+      top: topLine,
+      outcome: outcome,
+      trigger: trigger,
+      rounds: round.value,
+    );
+    final localWon = outcome.winner == 0;
+    feedback.gameOver(localWon: localWon);
+    if (outcome.winner != null) {
+      final winner = outcome.winner == 0 ? bottom : top;
+      effects.burst(
+        winner.position,
+        winner.identity.color,
+        maxRadius: 160,
+        duration: 1.2,
+      );
     }
     _setPhase(GamePhase.gameOver);
   }
+
+  ResultLine _resultLine(Player p) => ResultLine(
+    name: p.identity.name,
+    color: p.identity.color,
+    isBot: p.identity.isBot,
+    balloonsDestroyed: p.stats.balloonsDestroyed,
+    balloonsStanding: p.balloonsStanding,
+    score: p.stats.bankedScore,
+    distance: p.stats.totalDistance.round(),
+    penalties: p.stats.totalPenalties,
+    successfulRuns: p.stats.successfulRuns,
+    failedRuns: p.stats.failedRuns,
+  );
 
   // ------------------------------------------------------------------ HUD
 
@@ -482,6 +603,8 @@ class GameController {
     lastSuccess.dispose();
     lastFailure.dispose();
     balloonVersion.dispose();
+    timerSeconds.dispose();
+    result.dispose();
     bottomAgent.dispose();
     topAgent.dispose();
     for (final p in players) {

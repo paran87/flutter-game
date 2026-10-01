@@ -5,16 +5,10 @@ import 'package:dotline_duel/game/models/game_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/scripted_agent.dart';
+import 'support/sim.dart';
 
 /// No dots, fixed seed: movement rules only.
 const emptyBoard = GameConfig(obstacleSeed: 1, obstacleDensity: 0);
-
-void runFor(GameController c, double seconds, {double fps = 60}) {
-  final steps = (seconds * fps).round();
-  for (var i = 0; i < steps; i++) {
-    c.tick(1 / fps);
-  }
-}
 
 void main() {
   group('failures and attempts', () {
@@ -28,10 +22,12 @@ void main() {
           Offset(200, 1390),
         ],
       );
-      final c = GameController(
-        config: config,
-        bottomAgent: human,
-        topAgent: IdleAgent(),
+      final c = skipToPlaying(
+        GameController(
+          config: config,
+          bottomAgent: human,
+          topAgent: IdleAgent(),
+        ),
       );
       runFor(c, 1.5);
       final p = c.bottom;
@@ -48,10 +44,12 @@ void main() {
       final human = ScriptedAgent(
         waypoints: const [Offset(100, 1395), Offset(900, 1395)],
       );
-      final c = GameController(
-        config: config,
-        bottomAgent: human,
-        topAgent: IdleAgent(),
+      final c = skipToPlaying(
+        GameController(
+          config: config,
+          bottomAgent: human,
+          topAgent: IdleAgent(),
+        ),
       );
       runFor(c, 0.8);
       expect(c.bottom.runStatus, RunStatus.failed);
@@ -68,10 +66,12 @@ void main() {
 
     test('lifting the pen briefly is forgiven; too long fails the run', () {
       final human = ScriptedAgent(waypoints: const [Offset(500, 900)]);
-      final c = GameController(
-        config: emptyBoard,
-        bottomAgent: human,
-        topAgent: IdleAgent(),
+      final c = skipToPlaying(
+        GameController(
+          config: emptyBoard,
+          bottomAgent: human,
+          topAgent: IdleAgent(),
+        ),
       );
       runFor(c, 0.3);
       expect(c.bottom.runStatus, RunStatus.running);
@@ -92,10 +92,12 @@ void main() {
       final human = ScriptedAgent(
         waypoints: [Offset(500, dense.fieldRect.center.dy)],
       );
-      final c = GameController(
-        config: dense,
-        bottomAgent: human,
-        topAgent: IdleAgent(),
+      final c = skipToPlaying(
+        GameController(
+          config: dense,
+          bottomAgent: human,
+          topAgent: IdleAgent(),
+        ),
       );
       runFor(c, 2);
       expect(c.bottom.stats.totalCollisions, greaterThan(0));
@@ -109,7 +111,9 @@ void main() {
       final b = ScriptedAgent(
         waypoints: const [Offset(150, 205), Offset(850, 205)],
       );
-      final c = GameController(config: config, bottomAgent: a, topAgent: b);
+      final c = skipToPlaying(
+        GameController(config: config, bottomAgent: a, topAgent: b),
+      );
       runFor(c, 8);
       expect(c.bottom.attemptsRemaining, 0);
       expect(c.top.attemptsRemaining, 0);
@@ -125,10 +129,8 @@ void main() {
         waypoints: const [Offset(500, 700)],
         maxSpeed: 100,
       );
-      final c = GameController(
-        config: emptyBoard,
-        bottomAgent: human,
-        topAgent: bot,
+      final c = skipToPlaying(
+        GameController(config: emptyBoard, bottomAgent: human, topAgent: bot),
       );
       runFor(c, 3);
       expect(c.phase.value, isNot(GamePhase.playing));
@@ -151,10 +153,12 @@ void main() {
           Offset(500, 150),
         ],
       );
-      final c = GameController(
-        config: emptyBoard,
-        bottomAgent: human,
-        topAgent: IdleAgent(),
+      final c = skipToPlaying(
+        GameController(
+          config: emptyBoard,
+          bottomAgent: human,
+          topAgent: IdleAgent(),
+        ),
       );
       runFor(c, 6);
       final straight =

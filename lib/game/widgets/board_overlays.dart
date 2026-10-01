@@ -4,6 +4,7 @@ import '../controllers/game_controller.dart';
 import '../models/game_state.dart';
 import '../rendering/board_transform.dart';
 import 'failure_toast.dart';
+import 'phase_banner.dart';
 import 'run_summary_card.dart';
 import 'targeting_overlay.dart';
 
@@ -47,6 +48,10 @@ class BoardOverlays extends StatelessWidget {
         Positioned.fromRect(
           rect: rect,
           child: Center(child: TargetingBanner(controller: controller)),
+        ),
+        Positioned.fromRect(
+          rect: rect,
+          child: Center(child: PhaseBanner(controller: controller)),
         ),
         Positioned.fromRect(
           rect: rect,

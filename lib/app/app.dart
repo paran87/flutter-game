@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../game/models/game_config.dart';
 import '../game/screens/game_screen.dart';
 import '../game/screens/home_screen.dart';
 import 'theme.dart';
+
+/// Dev override for quick testing: `--dart-define=MATCH_SECONDS=15`.
+const _matchSeconds = int.fromEnvironment('MATCH_SECONDS', defaultValue: 120);
 
 abstract final class AppRoutes {
   static const home = '/';
@@ -28,7 +32,9 @@ class DotlineDuelApp extends StatelessWidget {
 
   static Route<dynamic> _onGenerateRoute(RouteSettings settings) {
     final Widget page = switch (settings.name) {
-      AppRoutes.game => const GameScreen(),
+      AppRoutes.game => GameScreen(
+        config: GameConfig(gameDuration: Duration(seconds: _matchSeconds)),
+      ),
       _ => const HomeScreen(),
     };
     return inkRoute(page, settings);
